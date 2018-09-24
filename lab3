@@ -1,0 +1,68 @@
+#lang plai-typed
+
+(define mylist (list 1 2 3))
+(define mylist2 (list 4 5 6))
+
+;; Function that multiplies a list of number by 6
+(define (multC [num : number]) : number
+  (* num 6))
+
+;; Function that doubles the values of a list
+(define (doublemap [fun : ('a -> 'a)] [dlist : (listof 'a)]): (listof 'a)
+  (cond
+    [(empty? dlist) empty]
+    [else (cons (fun (fun (first dlist))) (doublemap fun (rest dlist)))]))
+
+(test (doublemap multC mylist) (list 36 72 108))
+(test (doublemap multC (list 3 2 1)) (list 108 72 36))
+
+;; Function that combines two list into one list
+(define (zip [list1 : (listof 'a)] [list2 : (listof 'a)]) : (listof (listof 'a))
+  (cond
+   [(and (empty? list2) (empty? list1)) empty]
+   [else (cons (list (first list1) (first list2)) (zip (rest list1) (rest list2)))]))
+
+(test (zip (list 1 2 3) (list 4 5 6)) (list (list 1 4) (list 2 5) (list 3 6)))
+(test (zip mylist2 mylist) (list (list 4 1) (list 5 2) (list 6 3)))
+
+;; Function to sort small values based on the pivot
+(define (parSmall [l1 : (listof 'a)] [temp : number]) : (listof 'a)
+  (cond
+    [(empty? l1) (list temp)]
+    [(> temp (first l1))
+     (cons (first l1) (parSmall (rest l1) temp))]
+    [else (parSmall (rest l1) temp)]))
+
+;; Function to sort big values based on the pivot
+(define (parBig [l1 : (listof 'a)] [temp : number]) : (listof 'a)
+  (cond
+    [(empty? l1) empty]
+    [(or (< temp (first l1)) (= temp (first l1))) 
+     (cons (first l1) (parBig (rest l1) temp))]
+    [else (parBig (rest l1) temp)]))
+
+;; Function to create the list of small and big values
+(define (append [list1 : (listof 'a)] [list2 : (listof 'a)]) : (listof 'a)
+  (cond
+    [(and (empty? list1) (empty? list2)) empty]
+    [(empty? list1) (cons (first list2) (append list1 (rest list2)))]
+    [else (cons (first list1) (append (rest list1) list2))]))
+
+;; Function to keep on sorting if list not sorted
+(define (quicksortt [l1 : (listof 'a)]) : (listof 'a)
+  (cond
+    [(empty? l1) empty]
+    [(> (first l1) (first (parSmall (rest l1) (first l1)))) 
+     (quicksortt (append (parSmall (rest l1) (first l1)) (parBig (rest l1) (first l1))))]
+    [else
+     (cons (first l1) (quicksortt (rest l1)))]))
+
+(test (quicksortt empty) empty)
+(test (quicksortt (list 1)) (list 1))
+(test (quicksortt (list 1 2 3 4 5)) (list 1 2 3 4 5))
+(test (quicksortt (list 5 4 3 2 1)) (list 1 2 3 4 5))
+(test (quicksortt (list 3 4 1 5 2)) (list 1 2 3 4 5))
+(test (quicksortt (list 5 2 9 7 1 8 4 6 3)) (list 1 2 3 4 5 6 7 8 9))
+(test (quicksortt (list 50 5 2 100 9 7 1 101 8 4 6 3)) (list 1 2 3 4 5 6 7 8 9 50 100 101))
+(test (quicksortt (list 3 4 1 5 3 2)) (list 1 2 3 3 4 5))
+(test (quicksortt (list 3 4 5 1 5 4 4 3 5 2)) (list 1 2 3 3 4 4 4 5 5 5))

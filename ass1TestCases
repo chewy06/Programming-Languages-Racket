@@ -1,0 +1,14 @@
+#lang plai-typed
+
+(define bt1  (node  (leaf 'm1) (leaf 'm2)))
+(define bt2  (node  (leaf 'm3) (leaf 'm4)))
+(define head (node bt1 bt2))
+(define next (node head head))
+(define not-equal (node next head))
+(define really-small (node bt1 not-equal))
+
+(test (min-depth bt1)  1)
+(test (min-depth head) 2)
+(test (min-depth next) 3)
+(test (min-depth not-equal) 3)
+(test (min-depth really-small) 2)

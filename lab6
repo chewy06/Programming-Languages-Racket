@@ -1,0 +1,142 @@
+#lang plai-typed
+
+(require (typed-in racket
+                   [random : (number -> number)]
+                   [random-seed : (number -> void)]))
+
+;; Defintion of Operators
+(define ll (list '* '/ '- '+ 'eq? '<=))
+(define l1 (list '* '/ '- '+))
+(define l2 (list * / - +))
+(define syms (list 'a 'b 'c 'd 'e 'f 'g 'h))
+
+;; Function to caluclate given operation
+(define (get-operator [operator : symbol] [l1 : (listof 'a)] [l2 : (listof 'a)]) : ('a 'a -> 'a)
+  (cond [(empty? l1) (error 'get-operator (string-append "not an operator" (to-string operator)))]
+        [(symbol=? (first l1) operator) (first l2)]
+        [else (get-operator operator (rest l1) (rest l2))]))
+
+;; Extr2 type that represents the new language
+(define-type EXCR3
+  [numC (num : number)]
+  [boolC    (b : boolean)]
+  [idC   (s : symbol)]
+  [binop (name : symbol) (left : EXCR3) (right : EXCR3)]
+  [ifC   (left : EXCR3) (right : EXCR3) (then : EXCR3)]
+  [funC  (args : (listof symbol)) (body : EXCR3)]
+  [appC  (fun : EXCR3) (args : (listof EXCR3))])
+
+;; an environment is represented as a list of bindings
+(define-type-alias Env (listof Binding))
+
+;; a binding represents a binding
+(define-type Binding
+  [bind (name : symbol) (val : Value)])
+
+;; look up a binding in an env
+(define (env-lookup [name : symbol] [env : Env]) : Value
+  (cond [(empty? env) (error 'env-lookup (string-append "no binding for: " (to-string name)))]
+        [else (cond [(eq? name (bind-name (first env))) (bind-val (first env))]
+                    [else (env-lookup name (rest env))])]))
+
+;; a value is represented as a value
+(define-type Value
+  [numV (n : number)]
+  [boolV (b : boolean)]
+  [cloV (param : (listof symbol))
+        (body : EXCR3)
+        (env : Env)]
+  [lamV (arg : (listof symbol)) (body : EXCR3)])
+
+;; Function that return random symbol from list of size 8
+(define (randomSymbol) 
+  (list-ref syms (random (length syms))))
+
+;; Function that return random symbol from list of size 8
+(define (randomOperator) 
+  (list-ref ll (random (length ll))))
+
+;; Function to create random expressions
+(define (randomBaseTerm [env : (listof symbol)]) : EXCR3
+  (let ([seed (random 4)])
+   (cond [(= seed 0) (numC (random 1000))]
+         [(= seed 1) (idC (list-ref env (length env)))]
+         [(= seed 2) (boolC #true)]
+         [else (boolC #false)])))
+
+;; Function get list of symbol
+(define (get-list [size : number]) : (listof symbol)
+  (cond [(= size 0) empty]
+        [else (cons (randomSymbol) (get-list (- size 1)))]))
+
+;; Function that get list of excr's
+(define (excr-list [size : number] [s : (listof symbol)]) : (listof EXCR3)
+  (cond [(= size 0) empty]
+        [else (cons (randomBaseTerm s) (excr-list (- size 1) s))]))
+
+;; Function to eval bools or nums
+(define (eq?<= [ops : symbol] [v1 : Value] [v2 : Value] [env : Env]) : boolean
+  (cond [(and (numV? v1) (numV? v2) (symbol=? ops '<=)) (<= (numV-n v1) (numV-n v2))]
+        [(and (numV? v1) (numV? v2) (symbol=? ops 'eq?)) (eq? (numV-n v1) (numV-n v2))]
+        [(and (boolV? v1)(boolV? v2)(symbol=? ops 'eq?)) (eq? (boolV-b v1) (boolV-b v2))]
+        [else #f]))
+
+;; Function to create random expression with certain dept
+(define (randomCloseTerm [depth : number] [s : (listof symbol)]) : EXCR3
+  (let ([seed (random 4)])
+   (cond [(= depth 0) (randomBaseTerm s)]
+         [(= seed 0) (binop (randomOperator) (randomCloseTerm (- depth 1) s) (randomCloseTerm (- depth 1) s))]
+         [(= seed 1) (ifC (randomCloseTerm (- depth 1) s)  (randomCloseTerm (- depth 1) s) (randomCloseTerm (- depth 1) s))]
+         [(= seed 2) (local ([define s-list (get-list (random 4))])
+                       (funC s-list (randomCloseTerm (- depth 1) (append s-list s))))]
+         [else (appC (randomCloseTerm (- depth 1) s) (excr-list (random 4) s))])))
+
+;; Function that extract the values of the arguments
+(define (ex-args [args : (listof EXCR3)] [env : Env]) : (listof Value)
+  (cond [(empty? args) empty]
+        [else (cons (eval (first args) env) (ex-args (rest args) env))]))
+
+;; add a binding to an env
+(define (add-binding [from : (listof symbol)] [to : (listof Value)] [ontopof : Env]) : Env
+  (cond [(empty? from) ontopof]
+        [else (cons (bind (first from) (first to)) (add-binding (rest from) (rest to) ontopof))]))
+
+;; Function to evaluate expressions
+(define (eval [e : EXCR3] [env : Env]) : Value
+  (type-case EXCR3 e
+    [idC (x) (env-lookup x env)]
+    [boolC (b) (boolV b)]
+    [numC (n) (numV n)]
+    [binop (a b c)
+           (cond [(or (symbol=? a '<=) (symbol=? a 'eq?)) (boolV (eq?<= a (eval b env) (eval c env) env))]
+                 [else (numV ((get-operator a l1 l2) (numV-n (eval b env)) (numV-n (eval c env))))])]
+    [ifC (w y z) 
+         (local ([define statement (eval w env)])
+           (cond [(equal? (boolV-b statement) #t) (eval y env)]
+                 [else (eval z env)]))]
+    [funC (s b) (cloV s b env)]
+    [appC (fun args)
+          (local ([define fun-app (eval fun env)])
+            (cond [(= (length args) (length (cloV-param fun-app)))
+                   (eval (cloV-body fun-app) (add-binding (cloV-param fun-app) (ex-args args env) (cloV-env fun-app)))]
+                  [else (error 'appC (string-append "not equal length "(to-string '!)))]))]))
+
+
+;; Function to run trial for evaluator
+(define (runTrials [trials : number] [depth : number]) : number
+  (cond [(= trials 0) 0]
+        [else 
+         (try 
+          (local ([define vale (eval (randomCloseTerm depth empty) empty)])
+            (+ 1 (runTrials (- trials 1) depth))) 
+          (lambda () (+ 0 (runTrials (- trials 1) depth))))]))
+
+;; Function to run runTrials funtion(driver)(driver)
+(define (driver)
+  (local ([define trials (random 100)]
+          [define depth (random 10)])
+    (/ (runTrials (+ trials 1) depth) (+ trials 1))))
+
+(driver)(driver)(driver)(driver)(driver)(driver)(driver)(driver)(driver)(driver)
+(driver)(driver)(driver)(driver)(driver)(driver)(driver)(driver)(driver)(driver)
+(driver)(driver)(driver)(driver)(driver)(driver)(driver)(driver)(driver)(driver)

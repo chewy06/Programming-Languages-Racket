@@ -1,0 +1,313 @@
+#lang plai-typed
+
+(require plai-typed/s-exp-match)
+
+;; Defintion of hash Operators
+(define l1 (list '* '/ '- '+))
+(define l2 (list * / - +))
+
+;; Extr2 type that represents the new language
+(define-type EXCR2
+  [value (num : number)]
+  [idC (s : symbol)]
+  [binop (p : symbol) (left : EXCR2) (right : EXCR2)]
+  [ifleq0 (name : symbol) (left : EXCR2) (right : EXCR2) (then : EXCR2)])
+
+;; parse an s-exp into an ArithC
+(define (parse [n : s-expression]) : EXCR2
+  (cond [(s-exp-number? n) (value (s-exp->number n))]
+        [(s-exp-symbol? n) (idC (s-exp->symbol n))]
+        [(s-exp-match? '{ANY} n)
+         (parse (first (s-exp->list n)))]
+        [(s-exp-match? '{ANY ANY ANY} n)
+         (binop 
+          (s-exp->symbol (first (s-exp->list n)))
+          (parse (second (s-exp->list n)))
+          (parse (third (s-exp->list n))))]
+        [(s-exp-match? '{ifleq0 ANY ANY ANY} n)
+         (ifleq0 
+          (s-exp->symbol (first (s-exp->list n)))
+          (parse (second (s-exp->list n)))
+          (parse (third (s-exp->list n)))
+          (parse (fourth (s-exp->list n))))]
+        [else
+         (binop 
+          (s-exp->symbol (first (s-exp->list n)))
+          (parse (second (s-exp->list n)))
+          (idC 'e...))]))
+
+#;( ?   means that one or more symbols to its left can appear zero or one times.
+
+    ... means that one symbol to its left can be repeated zero or more times.
+
+    +   means that one symbol to its left can appear one or more times.)
+
+(test (parse '{f 1 2}) (binop 'f (value 1) (value 2)))
+(test (parse '{+ {f} {f}}) (binop '+ (idC 'f) (idC 'f)))
+(test (parse '{+ x y}) (binop '+ (idC 'x) (idC 'y)))
+(test (parse '{+ 1 2}) (binop '+ (value 1) (value 2)))
+(test (parse '{call}) (idC 'call))
+(test (parse '{call 1}) (binop 'call (value 1) (idC 'e...)))
+(test (parse '{call 1 2 3}) (binop 'call (value 1) (idC 'e...)))
+
+
+
+;; Function definition 
+(define-type Fundef
+  (Ops [name : symbol] [arg1 : symbol] [arg2 : symbol] [body : EXCR2])
+  (no-args [name : symbol] [body : EXCR2]))
+ 
+(define (bad-syntax [sym : (listof 'a)] [s : (listof 'a)]) : number
+  (cond
+    [(empty? sym) 0]
+    [(empty? (rest s)) (bad-syntax (rest sym) (rest sym))]
+    [(s-exp-match? (first sym) (second s)) 1]
+    [else (bad-syntax sym (rest s))]))
+
+(test (bad-syntax (s-exp->list '{x x})    (s-exp->list '{x x})) 1)
+(test (bad-syntax (s-exp->list '{x y z}) (s-exp->list '{x y z})) 0)
+
+;; Function that will parse the function definition
+(define (parse-fundef [s : s-expression]) : Fundef
+  (cond
+    [(s-exp-match? `{fn ANY ANY ANY} s)
+     (cond
+       [(s-exp-match? '{ANY ANY} (third (s-exp->list s))) 
+        (cond
+          [(= (bad-syntax (s-exp->list (third (s-exp->list s))) (s-exp->list (third (s-exp->list s)))) 1)
+           (error 'bad "syntax")]
+          [else 
+           (Ops 
+           (s-exp->symbol (second (s-exp->list s)))
+           (s-exp->symbol (first (s-exp->list (third (s-exp->list s)))))
+           (s-exp->symbol (second (s-exp->list (third (s-exp->list s)))))
+           (parse (fourth (s-exp->list s))))])] 
+       [(s-exp-match? (third (s-exp->list s)) '{}) 
+        (no-args
+        (s-exp->symbol (second (s-exp->list s)))
+        (parse (fourth (s-exp->list s))))]
+       [(s-exp-match? '{ANY} (third (s-exp->list s))) 
+           (Ops 
+           (s-exp->symbol (second (s-exp->list s)))
+           (s-exp->symbol (first (s-exp->list (third (s-exp->list s))))) 'e...
+           (parse (fourth (s-exp->list s))))]
+       [else 
+           (Ops 
+           (s-exp->symbol (second (s-exp->list s)))
+           (s-exp->symbol (first (s-exp->list (third (s-exp->list s)))))
+           (s-exp->symbol (second (s-exp->list (third (s-exp->list s)))))
+           (parse (fourth (s-exp->list s))))])]))
+
+(test (parse-fundef '{fn f {x} 5}) (Ops 'f 'x 'e... (value 5)))
+(test (parse-fundef '{fn f {x y z w} 5}) (Ops 'f 'x 'y (value 5)))
+(test (parse-fundef (quote (fn seven () (minus (+ 3 10) (* 2 3))))) 
+      (no-args 'seven (binop 'minus (binop '+ (value 3) (value 10)) (binop '* (value 2) (value 3)))))
+(test/exn (parse-fundef '{fn f {x x} x}) "bad: syntax")
+(test (parse-fundef '{fn f {} 5}) (no-args 'f (value 5)))
+(test (parse-fundef '{fn f {x y} x}) (Ops 'f 'x 'y (idC 'x)))
+(test (parse-fundef '{fn f {x y} {+ x y}}) (Ops 'f 'x 'y (binop '+ (idC 'x) (idC 'y) )))
+(test (parse-fundef '{fn f {} 5}) (no-args 'f (value 5)))
+
+;; Function to substitude the variables for our function definitions
+(define (subst [what : EXCR2] [for : symbol] [in : EXCR2]) : EXCR2
+  (type-case EXCR2 in
+  [value (n) in]
+  [idC (s) 
+       (cond 
+         [(symbol=? s for) what]
+         [else in])]
+  [binop (n l r) (binop n (subst what for l) (subst what for r))]
+  [ifleq0 (n l r t) r]))
+
+(test (subst (value 5) 'x (binop 'f (idC 'x) (idC 'y))) (binop 'f (value 5) (idC 'y)))
+(test (subst (binop 'f (value 5) (value 1)) 'y (binop 'f (idC 'x) (idC 'y))) 
+      (binop 'f (idC 'x) (binop 'f (value 5) (value 1))))
+(test (subst (value 1) 'x (binop 'f (value 1) (value 2))) (binop 'f (value 1) (value 2)))
+(test (subst (value 1) 'x (idC 'y)) (idC 'y))
+(test (subst (value 3) 'x (ifleq0 'x (value 1) (value 2) (value 3))) (value 2))
+
+;; Function to caluclate given operation
+(define (calculator [operator : symbol] [v1 : number] [v2 : number] [list1 : (listof 'a)] [l2 : (listof 'a)]) : number
+  (cond
+    [(empty? list1) 0]
+    [(symbol=? (first list1) 'ifleq0)
+     (cond 
+       [(or (= v1 0) (< v1 0)) v1]
+       [else (calculator operator v1 v2 l1 l2)])]
+    [(symbol=? (first list1) operator) ((first l2) v1 v2)]
+    [else (calculator operator v1 v2 (rest list1) (rest l2))]))
+
+(test (calculator '+ 1 2 empty l2) 0)
+(test (calculator '+ 0 2 (list 'ifleq0) l2) 0)
+(test (calculator '+ 2 2 (list 'ifleq0) l2) 4)
+(test (calculator '- 1 2 l1 l2) -1)
+
+;; Function to evaluate the type-case values
+(define (type-case-eval [cases : EXCR2]) : 'a
+  (type-case EXCR2 cases
+    [idC (s) s]
+    [value (x) '!]
+    [binop (operator e1 e2) operator]
+    [ifleq0 (sym e1 e2 e3) (type-case-eval e3)]))
+
+(test (type-case-eval (binop '+ (value 1) (value 2))) '+)
+(test (type-case-eval (ifleq0 '+ (idC 'y) (idC 'x) 
+                                   (binop '+ (value 1) (value 2)))) '+)
+
+;; Function that cheks if the symbol is an operator
+(define (is-operator [s : symbol] [list1 : (listof 'a)]) : number
+  (cond
+    [(empty? list1) 0]
+    [(symbol=? s (first list1)) 1]
+    [else (is-operator s (rest list1))]))
+
+(test (is-operator '+ l1) 1)
+(test (is-operator '* l1) 1)
+(test (is-operator '= l1) 0)
+
+;; Function to parse and map and call eval to calculate value
+(define (top-eval [s : s-expression] [fun-sexps : (listof s-expression)]) : number
+  (eval (parse s) (map parse-fundef fun-sexps)))
+
+(define temp (list 1))
+
+(define (get-eval [v1 : EXCR2] [funs : (listof Fundef)]) : number
+  (eval v1 funs))
+
+ ;; (get-eval (rest temp) t_ name v1 v2 op a1 a2 operator b1 b2)]
+
+;; Function to evaluate expressions
+(define (eval [e : EXCR2] [funs : (listof Fundef)]) : number
+  (let ([t_ funs])
+  (type-case EXCR2 e
+    [idC (x) 
+         (cond 
+           [(empty? funs) 
+            (error 'eval (string-append "wrong arity why" (to-string x)))] 
+           [(symbol=? x 'e...) 0]
+           [else 
+            (let ([defn (first funs)]) 
+              (type-case Fundef defn 
+                [Ops (op a1 a2 ex) 
+                     (type-case EXCR2 ex 
+                       [idC (variable) 
+                            (cond
+                              ;; [(symbol=? variable 'e...) 0]
+                              [else
+                               (error 'eval (string-append "wrong arity 0" 
+                                                                   (to-string variable)))])] 
+                       [value (x1) x1] 
+                       [binop (operator b1 b2) 
+                              (cond 
+                                [(and (= (is-operator operator l1) 1) (symbol=? x op)) 
+                                 (calculator operator 
+                                             (eval b1 (rest funs)) 
+                                             (eval b2 (rest funs)) l1 l2)]
+                                [else (eval ex (rest funs))])] 
+                       [ifleq0 (n l r t) 
+                               (eval (subst l (type-case-eval r) t) 
+                                     (list (Ops n (type-case-eval r) (type-case-eval l) (subst l (type-case-eval r) t))))])] 
+                [no-args (s e) 
+                            (eval e (rest funs))]))])] 
+    [value (s) s]
+    [binop (name v1 v2) 
+           (cond
+               [(empty? funs) 
+                (calculator name (eval v1 empty) (eval v2 empty) l1 l2)] 
+               [(= (is-operator name l1) 1)
+                (calculator name (eval v1 funs) (eval v2 funs) l1 l2)]
+               [else 
+                (let ([defn (first funs)]) 
+                  (type-case Fundef defn 
+                    [Ops (op a1 a2 ex) 
+                         (type-case EXCR2 ex 
+                           [idC (variable) (error 'eval (string-append "wrong arity 2" 
+                                                                       (to-string variable)))] 
+                           [value (x1) x1]
+                           [binop (operator b1 b2) 
+                                  (cond 
+                                    [(and (= (is-operator operator l1) 1) (symbol=? name op))
+                                     (calculator operator 
+                                                 (eval (subst v1 a1 (subst v2 a2 b1)) (rest funs)) 
+                                                 (eval (subst v1 a1 (subst v2 a2 b2)) (rest funs)) 
+                                                 l1 l2)]
+                                    #;[(symbol=? name op)
+                                     (get-eval (binop name (binop operator 
+                                                                  (subst v1 a1 (subst v2 a2 b1))
+                                                                  (subst v1 a1 (subst v2 a2 b2))) (idC 'e...)) t_)]
+                                    [else 
+                                     (eval (binop name 
+                                                  (value (eval (subst v1 a1 (subst v2 a2 b1)) funs))
+                                                  (value (eval (subst v1 a1 (subst v2 a2 b2)) funs))) (rest funs))])]
+                           
+                           [ifleq0 (n l r t) 
+                                   (eval (subst l (type-case-eval r) t) 
+                                         (list (Ops n (type-case-eval r) (type-case-eval l) (subst l (type-case-eval r) t))))])] 
+                    [no-args (s e) 
+                             (eval e (rest funs))]))])] 
+    [ifleq0 (n l r t) 
+            (eval (subst l (type-case-eval r) t) 
+                  (list (Ops n (type-case-eval r) (type-case-eval l) (subst l (type-case-eval r) t))))])))
+
+
+(test (eval (parse (quote (twice 15))) (list (parse-fundef (quote (fn realtwice (x) (+ x x)))) 
+                                                                   (parse-fundef (quote (fn twice (x) (realtwice x)))))) 30)
+;; !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+(test (parse (quote (twice 15))) (binop 'twice (value 15) (idC 'e...)))
+(test (parse-fundef (quote (fn realtwice (x) (+ x x)))) (Ops 'realtwice 'x 'e... (binop '+ (idC 'x) (idC 'x))))
+(test (parse-fundef (quote (fn twice (x) (realtwice x)))) (Ops 'twice 'x 'e... (binop 'realtwice (idC 'x) (idC 'e...))))
+
+(test (eval (parse '(add 1 2)) (list (parse-fundef (quote (fn add () (name (+ 1 2) (- 1 1))))))) 0)
+#;(your code failed a test: (eval (parse (quote (twice 15))) (list (parse-fundef (quote (fn realtwice (x) (+ x x)))) 
+                                                                   (parse-fundef (quote (fn twice (x) (realtwice x)))))) evaluated to 0, expecting 30
+Saving submission with errors.)
+
+(test/exn (eval (parse '{two}) empty) "eval: wrong arity why'two")
+(test (eval (parse (quote (twice (minus 8 5)))) (list (parse-fundef (quote (fn minus (x y) (+ x (* -1 y))))) (parse-fundef (quote (fn twice (x) (* 2 x)))))) 6)
+(test (parse (quote (twice (minus 8 5)))) (binop 'twice (binop 'minus (value 8) (value 5)) (idC 'e...))) 
+(test (parse-fundef (quote (fn minus (x y) (+ x (* -1 y))))) (Ops 'minus 'x 'y (binop '+ (idC 'x) (binop '* (value -1) (idC 'y)))))
+(test (parse-fundef (quote (fn twice (x) (* 2 x)))) (Ops 'twice 'x 'e... (binop '* (value 2) (idC 'x))))
+(test (parse (quote (twice (minus 8 5)))) (binop 'twice (binop 'minus (value 8) (value 5)) (idC 'e...)))
+
+(test (eval (parse (quote (seven))) 
+            (list (parse-fundef (quote (fn seven () (minus (+ 3 10) (* 2 3))))) 
+                  (parse-fundef (quote (fn minus (x y) (+ x (* -1 y))))))) 7)
+
+(test (parse-fundef (quote (fn seven () (minus (+ 3 10) (* 2 3))))) 
+      (no-args 'seven (binop 'minus (binop '+ (value 3) (value 10)) (binop '* (value 2) (value 3)))))
+
+(test (parse-fundef (quote (fn minus (x y) (+ x (* -1 y)))))
+      (Ops 'minus 'x 'y (binop '+ (idC 'x) (binop '* (value -1) (idC 'y)))))
+
+(test (eval (parse (quote (seven))) 
+            (list (parse-fundef (quote (fn seven (y x) (minus (+ 3 10) (* 2 3))))) 
+                  (parse-fundef (quote (fn minus (x y) (+ x (* -1 y))))))) 7)
+
+(test (eval (parse '(add 1 2)) (list (parse-fundef (quote (fn add (y x) (name (+ 1 2) (- 1 1))))))) 0)
+(test (eval (parse '(add)) (list (parse-fundef (quote (fn add (y x) (ifleq0 0 (+ 1 2) (- 1 1))))))) 0)
+(test (eval (parse '(add)) (list (parse-fundef (quote (fn add (x y) (+ 1 2)))))) 3)
+(test (eval (parse '(add)) (list (parse-fundef (quote (fn add () (ifleq0 0 x (- 1 1))))))) 0)
+(test (eval (parse '(add 4 5)) (list (parse-fundef (quote (fn add (y z) (+ (* 1 y) (+ 2 z))))))) 11)
+(test/exn (eval (parse '(add)) (list (parse-fundef (quote (fn add (y z) x))))) "eval: wrong arity 0")
+(test (eval (parse '(add)) (list (parse-fundef (quote (fn add (y z) 4))))) 4) 
+(test (subst (value 8) 'x (binop '+ (idC 'x) (binop '* (value -1) (idC 'y)))) (binop '+ (value 8) (binop '* (value -1) (idC 'y))))
+(test (parse-fundef '(fn minus (x y) (+ x (* -1 y)))) (Ops 'minus 'x 'y (binop '+ (idC 'x) (binop '* (value -1) (idC 'y)))))
+(test (eval (parse (quote (minus 8 5))) (list (parse-fundef (quote (fn minus (x y) (+ x (* -1 y))))))) 3)
+(test (eval (parse (quote (+ 1 2))) (list)) 3)
+(test/exn (top-eval '{f 1 2} (list '{fn f {x y} z})) "eval: wrong arity 2")
+(test (top-eval '{f 1 2} (list '{fn f {x y} 1})) 1)
+(test (top-eval '{f 1 2} 
+                (list '{fn f {x y} {ifleq0 {+ 1 1} {+ 1 2} {+ 1 2}}})) 3)
+(test (top-eval '{f 1 2} (list '{fn f {x y} {+ x y}})) 3)
+(test (top-eval '{+ {f} {f}} (list '{fn f {} 5})) 10)
+(test (parse '{+ {f} {f}}) (binop '+ (idC 'f) (idC 'f)))
+(test (parse-fundef '{fn f {} 5}) (no-args 'f (value 5)))
+(test (top-eval '{ifleq0 1 x {- x 1}} (list)) 0)
+(test (top-eval '{ifleq0 3 x {- x 1}} (list)) 2)
+(test (top-eval '{ifleq0 100 x {- x 1}} (list)) 99)
+(test (top-eval '{+ {+ 0 2} {+ 1 8}} 
+                (list '{fn f {x y} {+ x y}} '{fn f {x y} {+ x y}} '{fn f {x y} {+ x y}})) 11)
+#;(test (top-eval '{f {f 0 2} {f 1 8}} 
+                (list '{fn f {x y} {* x y}} '{fn f {x y} {+ x y}} '{fn f {x y} {- x y}})) 18)
+#;(test (top-eval '{f {f 0 2} {f 1 8}} 
+                (list '{fn f {x y} {* x y}} '{fn f {x y} {+ x y}} '{fn f {x y} {- x y}})) 18)

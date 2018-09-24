@@ -1,0 +1,195 @@
+#lang plai-typed
+
+;; Problem 2.3.3 Calculate the profits from museum
+(define (total-profit n) (- (* n 5) (+ (* n .5) 20)))
+(define pi 3.14159265358979323846264338327950288419716939937510)
+
+(test (total-profit 0) -20)
+(test (total-profit 2) -11)
+(test (total-profit 5) 2.5)
+(test (total-profit 100) 430)
+
+;; Problem 3.3.3 Calculate the area of a cylinder
+;; SA = 2pirh + 2pirr => 2pir(h+r)
+(define (area-cylinder r height) (* (* (* 2 r) pi) (+ height r)))
+
+(test (area-cylinder 1 1) 12.57)
+(test (area-cylinder 2 3) (* 20 pi))
+(test (area-cylinder 3 4) (* 42 pi))
+
+;; 2.2 Writing Implements
+;; Represent a writing implement
+(define-type writer
+  ;; ink volume in ml, how-full a number in the range 0.0 to 1.0
+  [pen (ink-volume : number) (how-full : number)]
+  ;; legth in cm
+  [pencil (length : number)])
+
+;; Implement to calculate amount to write in meters
+(define (how-far-to-write (distance : writer)) : number
+  ;; distance in meter
+  (type-case writer distance
+    ;; Calculate distance in meters a pen would write
+    [pen (ink-volume how-full) (* (* ink-volume how-full) 150)]
+    ;; Calculate distance in meters a pencil would write
+    [pencil (lenght) (* lenght 56)]))
+
+;; defining type of pencils/pens
+(define pen1 (pen 5 .2))
+(define pen2 (pen 100 .2))
+(define pencil1 (pencil 1))
+(define pencil2 (pencil 100))
+
+(test (how-far-to-write pen1) 150)
+(test (how-far-to-write pen2) 3000)
+(test (how-far-to-write pencil1) 56)
+(test (how-far-to-write pencil2) 5600)
+
+;; 2.3 Low-degree Polynomials
+;; Represents a low degree polynomial
+(define-type polynomial
+  ;; Coefficient a b
+  [linear (a : number) (b : number)]
+  ;; Coefficient a b c
+  [quadratic (a : number) (b : number) (c : number)])
+
+;; eval function to calculate variant and quadratic
+(define (eval (result : polynomial) (x : number)) : number
+  ;; Cases for linear and quadratic
+  (type-case polynomial result
+    ;; linear calculation
+    [linear (a b) (+ (* a x) b)]
+    ;; Calculate quadratic with cases
+    [quadratic (a b c) 
+               (cond 
+                 ; Case if a = 0 return 0
+                 [(= a 0) 0]
+                 ; return evaluted polynomial
+                 [else (+ (+ (* (* x x) a) (* b x)) c)])]))
+
+(define line1 (linear  1 1))
+(define quad2 (quadratic 1 1 1))
+(define quad3 (quadratic 0 1 1))
+
+(define line2 (linear  2 5))
+(define quad4 (quadratic 2 2 1))
+(define quad5 (quadratic 5 10 1))
+
+(test (eval line1 0) 1)
+(test (eval quad2 0) 1)
+(test (eval quad3 0) 0)
+
+(test (eval line2 1) 7)
+(test (eval quad4 1) 5)
+(test (eval quad5 1) 16)
+
+(test (eval line1 2) 3)
+(test (eval quad2 2) 7)
+(test (eval quad3 2) 0)
+
+(test (eval line2 5) 15)
+(test (eval quad4 5) 61)
+(test (eval quad5 5) 176)
+
+;; 2.4 Derivative
+;; Calculate derivative
+(define (derivative (poly : polynomial)) : polynomial
+  (type-case polynomial poly
+    ;; linear with new derivative values
+    [linear (a b) (linear 0 a)]
+    ;; quadratic with conditional derivatives
+    [quadratic (a b c) 
+               (cond
+                 ;; if a = 0 then derivative is 0
+                 [(= a 0)(linear 0 0)]
+                 ;; derivative 
+                 [else (linear (* a 2) b)])]))
+
+(test (derivative (quadratic  3 4 1)) (linear (* 3 2) 4))
+(test (derivative (quadratic -3 4 1)) (linear (* -3 2) 4))
+(test (derivative (linear -3 4)) (linear 0 -3))
+
+(test (eval (derivative (linear -3 4)) 1) -3)
+
+(test (eval (derivative line1) 1) 1)
+(test (eval (derivative line2) 3) 2)
+
+(test (eval (derivative quad2) 1) 3)
+(test (eval (derivative quad2) 3) 7)
+(test (eval (derivative quad3) 10) 0)
+(test (eval (derivative quad4) 3) 14)
+(test (eval (derivative quad5) 5) 60)
+
+;; 2.5 Binary Tree
+;; Define binary tree
+(define-type BTree
+  ;; Leaf symbol value
+  [leaf (leafs : symbol)]
+  ;; node left or right children
+  [node (left : BTree) (right : BTree)])
+
+(define bt1  (node  (leaf 'm1) (leaf 'm2)))
+(define bt2  (node  (leaf 'm3) (leaf 'm4)))
+(define head (node bt1 bt2))
+(define next (node head head))
+(define not-equal (node next head))
+(define really-small (node bt1 not-equal))
+
+;; 2.6 Defining mirror function
+(define (mirror (tree : BTree)) : BTree
+  ;; Type cases for tree
+  (type-case BTree tree 
+      ;; leaf return current tree
+      [leaf (leafs) tree]
+      ;; node switches orders by recursively calling their mirrors types
+      [node (left right) (node (mirror right) (mirror left))]))
+
+(test (mirror bt1) (node (leaf 'm2) (leaf 'm1)))
+(test (mirror head) (node (node (leaf 'm4) (leaf 'm3)) 
+                          (node (leaf 'm2) (leaf 'm1))))
+(test (mirror next) (node (node (node (leaf 'm4) (leaf 'm3)) 
+                          (node (leaf 'm2) (leaf 'm1)))
+                          (node (node (leaf 'm4) (leaf 'm3)) 
+                          (node (leaf 'm2) (leaf 'm1)))))
+
+;; 2.7 Defining min-depth function
+(define (min-depth (tree : BTree)) : number
+  ;; Cases for BTree
+  (type-case BTree tree
+    ;; leaf case return value 1
+    [leaf (l) 0]
+    ;; node case recursive calls right or left
+    [node (left right) (cond
+                         ;; Recursion call for right has the shortest path.
+                         [(> (+ (min-depth left) 1) (+ (min-depth right) 1))  
+                          (+ (min-depth right) 1)]
+                         ;; Rercursion call for left having the shortest path.
+                         [(< (+ (min-depth left) 1) (+ (min-depth right) 1))
+                          (+ (min-depth left) 1)]
+                         ;; either one having shortest path.
+                         [else (+ (min-depth left) 1)])]))
+
+(test (min-depth bt1)  1)
+(test (min-depth head) 2)
+(test (min-depth next) 3)
+(test (min-depth not-equal) 3)
+(test (min-depth really-small) 2)
+
+; [FROM CAPTAIN TEACH] ALL BELOW!
+(test (min-depth (leaf 'a)) 0)
+(test (min-depth (node (leaf 'a) (leaf 'b))) 1)
+(test (min-depth (node (leaf 'a) (node (node (leaf 'b) (leaf 'd)) (leaf 'c)))) 1)
+(test (min-depth (node (node (leaf 'a) (leaf 'b)) (node (leaf 'c) (leaf 'd)))) 2)
+(test (min-depth (node (node (node (leaf 'a) (leaf 'b)) 
+                             (node (leaf 'c) (leaf 'd)))
+                       (node (node (node (leaf 'e) (leaf 'f)) (leaf 'g)) 
+                             (node (leaf 'h) (leaf 'i))))) 3)
+(define l1 (leaf 'foo))
+(define l2 (leaf 'bar))
+(define l3 (leaf 'zed))
+(define n1 (node l1 l2))
+(define top (node n1 l3))
+
+(test (min-depth top) 1)
+(test (min-depth l1) 0)
+(test (min-depth (node top top)) 2)

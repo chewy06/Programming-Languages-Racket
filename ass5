@@ -1,0 +1,406 @@
+#lang plai-typed
+
+(require plai-typed/s-exp-match)
+
+;;(print-only-errors true)
+
+;; Defintion of Operators
+(define ll (list '* '/ '- '+ 'eq? '<=))
+(define l1 (list '* '/ '- '+))
+(define l2 (list * / - +))
+(define invalid (list '* '/ '- '+ 'eq? '<= 'fn 'if 'with))
+
+;; Extr2 type that represents the new language
+(define-type EXCR5
+  [numC (num : number)]
+  [boolC (b : boolean)]
+  [strC (s : string)]
+  [idC (s : symbol)]
+  [binop (name : symbol) (left : EXCR5) (right : EXCR5)]
+  [ifC (name : symbol) (left : EXCR5) (right : EXCR5) (then : EXCR5)]
+  [funC (args : (listof symbol)) (body : EXCR5)]
+  [appC (fun : EXCR5) (args : (listof EXCR5))]
+  [recC (name : symbol) (rhs : EXCR5) (body : EXCR5)])
+
+;; Function to caluclate given operation
+(define (get-operator [operator : symbol] [l1 : (listof 'a)] [l2 : (listof 'a)]) : ('a 'a -> 'a)
+  (cond [(empty? l1) (error 'get-operator (string-append "not an operator" (to-string operator)))]
+        [(symbol=? (first l1) operator) (first l2)]
+        [else (get-operator operator (rest l1) (rest l2))]))
+
+(test (get-operator '+ l1 l2) +)
+(test (get-operator '* l1 l2) *)
+(test/exn (get-operator '= l1 l2) "get-operator: not an operator")
+
+;; Function that cheks if the symbol is an operator
+(define (is-operator [s : symbol] [list1 : (listof 'a)]) : boolean
+  (cond [(empty? list1) #f]
+        [(symbol=? s (first list1)) #t]
+        [else (is-operator s (rest list1))]))
+
+(test (is-operator '+ l1) #t)
+(test (is-operator '* l1) #t)
+(test (is-operator '= l1) #f)
+
+;; Function to test whether the parse function reiced good input
+(define (not-id [id : symbol] [l : (listof symbol)]) : boolean
+  (cond [(empty? l) #t]
+        [(symbol=? id (first l)) #f]
+        [else (not-id id (rest l))]))
+
+(test (not-id '+ l1) #f)
+(test (not-id 'n l1) #t)
+
+;; Function that checks real num arguments
+(define (is-number [l : (listof s-expression)]) : boolean
+  (cond [(empty? l) #t]
+        [(s-exp-symbol? (first l)) #f]
+        [else (is-number (rest l))]))
+
+(test (is-number (s-exp->list '{/ 3})) #f)
+(test (is-number (s-exp->list '{1 1 3 4})) #t)
+
+;; Function to parse the s-expression to a single repetition
+(define (partition [s : (listof s-expression)]) : (listof s-expression)
+  (cond [(empty? (rest s)) empty]
+        [else (cons (first s) (partition (rest s)))]))
+
+(test (partition (rest (s-exp->list '{with (x = 98) (z = (+ 1 2)) (+ x z)}))) (list '(x = 98) '(z = (+ 1 2))))
+(test (partition (rest (s-exp->list '{with (x = 98) (z = (+ 1 2)) (y = 3) (+ x z)}))) (list '(x = 98) '(z = (+ 1 2)) '(y = 3)))
+
+;; Function to varify if func contain real arguments
+(define (are-args [s : s-expression]) : symbol 
+  (sym-args (first (s-exp->list s))))
+
+;; Function to get the EXCR3 return values
+(define (sym-args [s : s-expression]) : symbol
+  (cond [(equal? (is-operator (s-exp->symbol s) invalid) #t) 
+         (error 'parse (string-append "invalid id" (to-string s)))]
+        [else (s-exp->symbol s)]))
+
+(test (are-args '{p}) 'p)
+(test/exn (are-args '{+}) "parse: invalid id'+")
+
+;; Function to return the EXCR3 body
+(define (excr-args [s : s-expression]) : EXCR5
+  (parse (third (s-exp->list s))))
+
+;; Function to validate binop
+(define (validate-binop [s : (listof s-expression)]) : EXCR5
+  (cond [(and (s-exp-symbol? (second s)) (is-operator (s-exp->symbol (second s)) invalid)) (error 'binop "not valid")]
+        [(and (s-exp-symbol? (third s)) (is-operator (s-exp->symbol (third s)) invalid)) (error 'binop "not valid")]
+        [else (binop (s-exp->symbol (first s)) (parse (second s)) (parse (third s)))]))
+
+(test/exn (validate-binop (s-exp->list '{+ y +})) "binop: not valid") 
+(test/exn (validate-binop (s-exp->list '{+ + y})) "binop: not valid") 
+
+;; Function that check if list exits
+(define (pre-eval [l : (listof symbol)]) : (listof symbol)
+  (cond [(empty? l) l]
+        [(equal? (inval-repetition l (rest l)) #t) l]
+        [else (error 'parse "invalid args")]))
+
+;; Function that invalidates repetition of args
+(define (inval-repetition [l : (listof symbol)] [r : (listof symbol)]) : boolean
+  (cond [(empty? (rest l)) #t]
+        [(empty? r) (inval-repetition (rest l) (rest (rest l)))]
+        [(equal? (first l) (first r)) #f]
+        [else (inval-repetition l (rest r))]))
+
+(test (pre-eval (list 'x)) (list 'x))
+(test/exn (pre-eval (list 'x 'x)) "parse: invalid args")
+(test (pre-eval (list 'x 'z 'y)) (list 'x 'z 'y))
+
+;; Function that return the last EXCR
+(define (get-last [s : (listof s-expression)]) : s-expression
+  (cond [(empty? (rest s)) (first s)]
+        [else (get-last (rest s))]))
+
+#;([rec (name : symbol) (rhs : ExcrC) (body : ExcrC)])
+#;({new id EXCR5 ...})
+#;({send EXCR5 id EXCR5 ...})
+#;({class <classname> extends <classname> {<field> ...} <method> ...})
+#;((local [(define test `{+ 3 4})
+           (define then {list `+ `p `15})
+           (define els `{f x})]
+  `{if ,test ,@then ,els})
+   result ==> `{if {+ 3 4} {+ p 15} {f x}})
+
+#;((local [(define test `{+ 3 4})
+        (define then `{+ p 15})
+        (define els `{f x})]
+  `{if ,test ,then ,els})
+   result ==> `{if {+ 3 4} + p 15 {f x}})
+
+#;(Program = {ClassDef ... EXCR5})
+#;(== "this" will refer to the object on which the method was called)
+#;(ClassDef = {class id extends id {id ...}
+               {id {id ...} EXCR5}
+               ...})
+
+;; Fuction to get s-exp to string to quosi
+(define (get-string [s : s-expression]) : s-expression
+  (string->s-exp (symbol->string (s-exp->symbol s))))
+
+;; Function that return listof quasiquotes
+(define (create-slist [s : (listof s-expression)]) : (listof s-expression)
+  (cond [(empty? s) empty]
+        [else (cons `,(first s) (create-slist (rest s)))]))
+
+;; Function to desugar s-expression to new s-expression
+(define (parse-send [s : (listof s-expression)]) : EXCR5
+  (local ([define object (first s)]
+          [define str (get-string (second s))]
+          [define args (create-slist (rest (rest s)))])
+    (parse `{with {obj = ,object} {{obj ,str} obj ,@args}})))
+
+#;({class Point extends Object
+    {fields x y}
+    {method get-x {} x}
+    {method get-y {} y}}
+   
+   {class 3DPoint extends Point
+    {fields z}
+    {method get-z {} z}
+    {method dist-from-zero {}
+            {with {y = {send this get-y}}
+                {with {x = {send this get-x}}
+                      {expt {+ {* z z} {+ {* y y} {* x x}}} 1/2}}}}}
+   
+======> DESUGARING CLASSDEF
+{fn {x y z}
+     {with {parent = {new Point x y}}
+           {fn {mesg}
+                {if {eq? mesg "get-z"}
+                    {fn {this} z}
+                    {if {eq? mesg "dist-from-zero"}
+                        {fn {this}
+                             {with {y = {send this get-y}}
+                                   {with {x = {send this get-x}}
+                                         {expt {+ {* z z} {+ {* y y} {* x x}}} 1/2}}}}
+                        {parent mesg}}}}}})
+
+;; Funtion to return the desugar methods
+(define (get-methods [body : (listof s-expression)]) : s-expression
+  (cond [(empty? body) `{parent mesg}]
+        [(s-exp-match? '{method ANY ...} (first body))
+         (local ([define meth (s-exp->list (first body))]
+                 [define msg (get-string (second meth))]
+                 [define bdy (fourth meth)])
+           `{if {eq? mesg ,msg} {fn {,msg} ,bdy} ,(get-methods (rest body))})]
+        [else (get-methods (rest body))]))
+
+;; Function to desugar classes
+(define (desugar-classe [class : (listof s-expression)] [main : s-expression]) : s-expression
+  (local ([define name (second class)]
+          [define extends (fourth class)]
+          [define fields (create-slist (rest (s-exp->list (fourth (rest class)))))]
+          [define methods (get-methods class)])
+           `{rec {,name = {fn {,@fields} {with {parent = {new ,extends ,@fields}} {fn {mesg} ,methods}}}} ,main}))
+
+;; Function to parse Program to its readable form
+(define (parse-prog [c : (listof s-expression)]) : s-expression
+  (local ([define main (get-last c)]
+          [define body (desugar-classe (s-exp->list (first c)) main)])
+     `{rec {Object = {fn {}
+                      {fn {mesg}
+                          "NO METHODS"}}} ,body}))
+
+#;(test (desugar-classe (s-exp->list 
+                       '{class Point extends Object
+                          {fields x y}
+                          {method get-x {} x}
+                          {method get-y {} y}} ) '{+ {send Point get-x 1 2} {send Point get-y 1 2}}) '{})
+
+;; Function to creat EXCR3 type
+(define (parse [n : s-expression]) : EXCR5
+  (cond [(s-exp-match? '{false} n) (boolC #false)]
+        [(s-exp-match? '{true} n) (boolC #true)]
+        [(s-exp-number? n) (numC (s-exp->number n))]
+        [(s-exp-string? n) (strC (s-exp->string n))]
+        [(s-exp-symbol? n) (idC (s-exp->symbol n))]
+        [(s-exp-match? '{new SYMBOL ANY ...} n)
+         (parse-send (rest (s-exp->list n)))]
+        [(s-exp-match? '{new SYMBOL ANY ...} n)
+         (appC (parse (second (s-exp->list n)))
+                     (map parse (s-exp->list (third (s-exp->list n)))))]
+        [(s-exp-match? '{rec {SYMBOL = ANY} ANY} n)
+         (recC (s-exp->symbol (first (s-exp->list (second (s-exp->list n)))))
+               (parse (third (s-exp->list (second (s-exp->list n)))))
+               (parse (get-last (s-exp->list n))))]
+        [(s-exp-match? '{with {SYMBOL = ANY} ... ANY} n)
+         (appC (funC (pre-eval (map are-args (partition (rest (s-exp->list n)))))
+               (parse (get-last (s-exp->list n))))
+               (map excr-args (partition (rest (s-exp->list n)))))]
+        [(s-exp-match? '{fn {SYMBOL ...} ANY} n)
+         (funC (pre-eval (map  s-exp->symbol (s-exp->list (second (s-exp->list n)))))
+               (parse (third (s-exp->list n))))]
+        [(and (s-exp-match? '{SYMBOL ANY ANY} n) (is-operator (s-exp->symbol (first (s-exp->list n))) ll))
+         (validate-binop (s-exp->list n))]
+        [(s-exp-match? '{if ANY ANY ANY} n)
+         (ifC (s-exp->symbol (first (s-exp->list n)))
+                 (parse (second (s-exp->list n)))
+                 (parse (third (s-exp->list n)))
+                 (parse (fourth (s-exp->list n))))]
+         [else (appC (parse (first (s-exp->list n)))
+                     (map parse (rest (s-exp->list n))))]))
+
+(test (parse '{with {Object = {fn {} {fn {mesg} "NO METHODS"}}} {parent}}) 
+      (appC (funC (list 'Object) (appC (idC 'parent) (list))) (list (funC (list) (funC (list 'mesg) (strC "NO METHODS"))))))
+
+(test (parse-send (rest (s-exp->list '{send p1 add-x 999 1000}))) (appC (funC (list 'obj) (appC (appC (idC 'obj) (list (strC "add-x"))) 
+                                                                  (list (idC 'obj) (numC 999) (numC 1000)))) (list (idC 'p1))))
+(test (excr-args '{z = 2}) (numC 2))
+(test (parse (get-last (s-exp->list '{with {+ 1 2} {+ 1 2} 9}))) (numC 9))
+(test (parse '{false}) (boolC #false))
+(test (parse '{true}) (boolC #true))
+(test (parse '{with (x = 98) (z = (+ 1 2)) (+ x z)})
+      (appC (funC (list 'x 'z) (binop '+ (idC 'x) (idC 'z))) (list (numC 98) (binop '+ (numC 1) (numC 2)))))
+
+(test (parse '{fn (x y) (+ x y)}) (funC (list 'x 'y)(binop '+ (idC 'x) (idC 'y))))
+(test (parse '{if 1 2 (+ 1 2)}) (ifC 'if (numC 1) (numC 2) (binop '+ (numC 1) (numC 2))))
+(test (parse '{+ 1 (+ 1 2)}) (binop '+ (numC 1) (binop '+ (numC 1) (numC 2))))
+
+;; a value is represented as a value
+(define-type Value
+  [numV (n : number)]
+  [strV (s : string)]
+  [boolV (b : boolean)]
+  [cloV (param : (listof symbol))
+        (body : EXCR5)
+        (env : Env)]
+  [objV (ns : (listof symbol)) (es : (listof EXCR5))])
+
+;; an environment is represented as a list of bindings
+(define-type-alias Env (listof Binding))
+
+;; a binding represents a binding
+(define-type Binding
+  [bind (name : symbol) (val : (boxof Value))])
+
+;; look up a binding in an env
+(define (env-lookup [name : symbol] [env : Env]) : Value
+  (cond [(empty? env) (error 'env-lookup (string-append "no binding for: " (to-string name)))]
+        [else (cond [(eq? name (bind-name (first env))) (unbox (bind-val (first env)))]
+                    [else (env-lookup name (rest env))])]))
+
+#;(test (env-lookup 'x (list (bind 'x (numV 3)))) (numV 3))
+#;(test/exn (env-lookup 'x (list (bind 'z (numV 3)))) "env-lookup: no binding for: 'x")
+
+;; Function to return string of type Value
+(define (top-eval [s : s-expression]) : string
+  (serialize (eval (parse s) (add-binding (list 'true 'false) (list (boolV #true) (boolV #false)) empty))))
+
+;; Function to conver type Value to numbers to string
+(define (serialize [t : Value]) : string
+  (cond [(numV? t) (to-string (numV-n t))]
+        [(boolV? t) 
+         (cond [(equal? (boolV-b t) #t) "true"]
+               [else "false"])]
+        [else "#<procedure>"]))
+
+(test (serialize (boolV #f)) "false")
+(test (serialize (boolV #t)) "true")
+(test (serialize (cloV (list) (numC 1) empty)) "#<procedure>")
+
+;; Function to eval bools or nums
+(define (eq?<= [ops : symbol] [v1 : Value] [v2 : Value] [env : Env]) : boolean
+  (cond [(and (numV? v1) (numV? v2) (symbol=? ops '<=)) (<= (numV-n v1) (numV-n v2))]
+        [(and (numV? v1) (numV? v2) (symbol=? ops 'eq?)) (eq? (numV-n v1) (numV-n v2))]
+        [(and (boolV? v1)(boolV? v2)(symbol=? ops 'eq?)) (eq? (boolV-b v1) (boolV-b v2))]
+        [(and (strV? v1)(strV? v2) (symbol=? ops 'eq?)) (equal? (strV-s v1) (strV-s v2))]
+        [else #f]))
+
+(test (eq?<= 'eq? (boolV #true) (boolV #true) empty) #true)
+(test (eq?<= 'eq? (boolV #true) (numV 1) empty) #false)
+
+;; Function that extract the values of the arguments
+(define (ex-args [args : (listof EXCR5)] [env : Env]) : (listof Value)
+  (cond [(empty? args) empty]
+        [else (cons (eval (first args) env) (ex-args (rest args) env))]))
+
+;; add a binding to an env
+(define (add-binding [from : (listof symbol)] [to : (listof Value)] [ontopof : Env]) : Env
+  (cond [(empty? from) ontopof]
+        [else (cons (bind (first from) (box (first to))) (add-binding (rest from) (rest to) ontopof))]))
+
+;; Function to evaluate expressions
+(define (eval [e : EXCR5] [env : Env]) : Value
+  (type-case EXCR5 e
+    [idC (x) (env-lookup x env)]
+    [strC (s) (strV s)]
+    [boolC (b) (boolV b)]
+    [numC (n) (numV n)]
+    [binop (a b c)
+           (cond [(or (symbol=? a '<=) (symbol=? a 'eq?)) (boolV (eq?<= a (eval b env) (eval c env) env))]
+                 [else (numV ((get-operator a l1 l2) (numV-n (eval b env)) (numV-n (eval c env))))])]
+    [ifC (x w y z) 
+         (local ([define statement (eval w env)])
+           (cond [(equal? (boolV-b statement) #t) (eval y env)]
+                 [else (eval z env)]))]
+    [funC (s b) (cloV s b env)]
+    [appC (fun args)
+          (local ([define fun-app (eval fun env)])
+            (cond [(= (length args) (length (cloV-param fun-app)))
+                   (eval (cloV-body fun-app) (add-binding (cloV-param fun-app) (ex-args args env) (cloV-env fun-app)))]
+                  [else (error 'appC (string-append "not equal length "(to-string '!)))]))]
+    [recC (n r b)  (local ([define newbox (box (numV 277777))]
+                           [define newenv (cons (bind n newbox) env)]
+                           [define rhsval (eval r newenv)])
+                     (begin (set-box! newbox rhsval)
+                            (eval b newenv)))]))
+
+#;(test (parse-prog (s-exp->list 
+                       '{{class Point extends Object
+                          {fields x y}
+                          {method get-x {} x}
+                          {method get-y {} y}} 
+                          {+ {send Point get-x 1 2} {send Point get-y 1 2}}})) (numC 1))
+
+(test (eval (parse '{rec {fact = {fn {n} {if {eq? n 0} 1 {* n {fact {- n 1}}}}}} {fact 5}}) empty) (numV 120))
+(test (top-eval (quote ((fn (empty) ((fn (cons) ((fn (empty?) ((fn (first) ((fn (rest) ((fn (Y) ((fn (length) ((fn (addup) (addup 
+ (cons 3 (cons 17 empty)))) (Y (fn (addup) (fn (l) (if (empty? l) 0 (+ (first l) (addup (rest l))))))))) (Y (fn (length) (fn (l) 
+ (if (empty? l) 0 (+ 1 (length (rest l))))))))) ((fn (x) (fn (y) (y (fn (z) (((x x) y) z))))) (fn (x) (fn (y) (y (fn (z) (((x x) y) z)))))))) 
+ (fn (l) (l false)))) (fn (l) (l true)))) (fn (l) (eq? l empty)))) (fn (a b) (fn (select) (if select a b))))) 13))) "20")
+
+(test (top-eval '{{fn {empty} {{fn {cons} {{fn {empty?} {{fn {first} {{fn {rest} {+ {- rest {- first empty}} {* cons {* empty? 
+                                               {- first rest}}}}} 1}}3}} 5}} {+ 2 2}}} {+ 1 2}}) "41")
+
+(test (top-eval (quote ((fn (seven) (seven)) ((fn (minus) (fn () (minus (+ 3 10) (* 3 3)))) (fn (x y) (+ x (* -1 y))))))) "4")
+(test (top-eval (quote ((fn (seven) (seven)) ((fn (minus) (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y))))))) "7")
+(test (parse-prog (s-exp->list `{{class Point extends Object
+                          {fields x y}
+                          {method get-x {} x}
+                          {method get-y {} y}} 
+                       `{+ {send Point get-x 1 2} {send Point get-y 1 2}}})) `{})
+(test (parse (parse-prog (s-exp->list `{{class Point extends Object
+                          {fields x y}
+                          {method get-x {} x}
+                          {method get-y {} y}} 
+                       `{+ {send Point get-x 1 2} {send Point get-y 1 2}}}))) (numC 1))
+#;(
+(test (top-eval (quasiquote (if (eq? true false) 29387 true))) "true")
+(test (top-eval (quasiquote (if (eq? true true) 29387 true))) "29387")
+(test (top-eval (quasiquote (if (eq? 4 3) 29387 true))) "true")
+(test (top-eval (quasiquote (if (<= 4 3) 29387 true))) "true")
+(test (top-eval (quasiquote (if (<= 3 4) 29387 true))) "29387")
+
+(test (top-eval (quote ((fn (minus) (minus 8 5)) (fn (a b) (+ a (* -1 b)))))) "3")
+(test (parse (quote ((fn (minus) (minus 8 5)) (fn (a b) (+ a (* -1 b)))))) 
+      (appC (funC (list 'minus) (appC (idC 'minus) (list (numC 8) (numC 5)))) 
+            (list (func (list 'a 'b) (binop '+ (idC 'a) (binop '* (value -1) (idC 'b)))))))
+(test/exn (parse '(with (z = (fn () 3)) (z = 9) (z))) "parse: invalid args")
+(test/exn (parse '(fn (x x) 3)) "parse: invalid args")
+(test/exn (top-eval '((fn () 9) 17)) "appC: not equal length")
+(test (top-eval (quote ((fn () 9)))) "9")
+(test (top-eval (quote (fn () 9))) "#<procedure>")
+(test (eval (binop '<= (value 1) (value 1)) empty) (boolV #true))
+(test (eval (tf #true) empty) (boolV #t))
+(test (eval (parse '{{fn (x y) (+ x y)} 1 2}) empty) (numV 3))
+(test (eval (parse '{fn (x y) (+ x y)}) (list (bind 'x (numV 1)) (bind 'y (numV 2))))
+(cloV (list 'x 'y) (binop '+ (idC 'x) (idC 'y)) (list (bind 'x (numV 1)) (bind 'y (numV 2)))))
+(test (eval (parse '{+ {+ a b} {+ c d}}) (list (bind 'a (numV 1)) (bind 'b (numV 1)) (bind 'c (numV 1)) (bind 'd (numV 1)))) 
+      (numV 4))
+(test (add-binding (list 'z) (list (numV 1)) empty) (list (bind 'z (numV 1))))
+(test (add-binding (list 'xxx) (list (numV 2)) (list (bind 'z (numV 33)))) (list (bind 'xxx (numV 2)) (bind 'z (numV 33))))
+)

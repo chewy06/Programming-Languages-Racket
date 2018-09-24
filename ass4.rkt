@@ -1,0 +1,463 @@
+#lang plai-typed
+
+(require plai-typed/s-exp-match)
+;;(print-only-errors true)
+
+;; Defintion of Operators
+(define ll (list '* '/ '- '+ 'eq? '<=))
+(define l1 (list '* '/ '- '+))
+(define l2 (list * / - +))
+(define invalid (list '* '/ '- '+ 'eq? '<= 'fn 'if 'with))
+
+;; Extr2 type that represents the new language
+(define-type EXCR4
+  [value (num : number)]
+  [tf (b : boolean)]
+  [idC (s : symbol)]
+  [binop (name : symbol) (left : EXCR4) (right : EXCR4)]
+  [if_ (name : symbol) (left : EXCR4) (right : EXCR4) (then : EXCR4)]
+  [func (args : (listof symbol)) (body : EXCR4)]
+  [appC (fun : EXCR4) (args : (listof EXCR4))]
+  [new-array (size : EXCR4) (dfault : EXCR4)]
+  [ref (name : EXCR4) (idx : EXCR4)]
+  [insert (ins : EXCR4) (idx : EXCR4) (val : EXCR4)]
+  [replace (where : EXCR4) (val : EXCR4)]
+  [Seq (start : (listof EXCR4)) (last : EXCR4) ])
+
+;; Function to caluclate given operation
+(define (get-operator [operator : symbol] [l1 : (listof 'a)] [l2 : (listof 'a)]) : ('a 'a -> 'a)
+  (cond [(empty? l1) (error 'get-operator (string-append "not an operator" (to-string operator)))]
+        [(symbol=? (first l1) operator) (first l2)]
+        [else (get-operator operator (rest l1) (rest l2))]))
+
+(test (get-operator '+ l1 l2) +)
+(test (get-operator '* l1 l2) *)
+(test/exn (get-operator '= l1 l2) "get-operator: not an operator")
+
+;; Function that cheks if the symbol is an operator
+(define (is-operator [s : symbol] [list1 : (listof 'a)]) : boolean
+  (cond [(empty? list1) #f]
+        [(symbol=? s (first list1)) #t]
+        [else (is-operator s (rest list1))]))
+
+(test (is-operator '+ l1) #t)
+(test (is-operator '* l1) #t)
+(test (is-operator '= l1) #f)
+
+;; Function to test whether the parse function reiced good input
+(define (not-id [id : symbol] [l : (listof symbol)]) : boolean
+  (cond [(empty? l) #t]
+        [(symbol=? id (first l)) #f]
+        [else (not-id id (rest l))]))
+
+(test (not-id '+ l1) #f)
+(test (not-id 'n l1) #t)
+
+;; Function that checks real num arguments
+(define (is-number [l : (listof s-expression)]) : boolean
+  (cond [(empty? l) #t]
+        [(s-exp-symbol? (first l)) #f]
+        [else (is-number (rest l))]))
+
+(test (is-number (s-exp->list '{/ 3})) #f)
+(test (is-number (s-exp->list '{1 1 3 4})) #t)
+
+;; Function to parse the s-expression to a single repetition
+(define (partition [s : (listof s-expression)]) : (listof s-expression)
+  (cond [(empty? (rest s)) empty]
+        [else (cons (first s) (partition (rest s)))]))
+
+(test (partition (rest (s-exp->list '{with (x = 98) (z = (+ 1 2)) (+ x z)}))) (list '(x = 98) '(z = (+ 1 2))))
+(test (partition (rest (s-exp->list '{with (x = 98) (z = (+ 1 2)) (y = 3) (+ x z)}))) (list '(x = 98) '(z = (+ 1 2)) '(y = 3)))
+
+;; Function to varify if func contain real arguments
+(define (are-args [s : s-expression]) : symbol
+  (sym-args (first (s-exp->list s))))
+
+;; Function to get the EXCR3 return values
+(define (sym-args [s : s-expression]) : symbol
+  (cond [(equal? (is-operator (s-exp->symbol s) invalid) #t)
+         (error 'parse (string-append "invalid id" (to-string s)))]
+        [else (s-exp->symbol s)]))
+
+(test (are-args '{p}) 'p)
+(test/exn (are-args '{+}) "parse: invalid id'+")
+
+;; Function to return the EXCR3 body
+(define (excr-args [s : s-expression]) : EXCR4
+  (excr3 (third (s-exp->list s))))
+
+;; Function to validate binop
+(define (validate-binop [s : (listof s-expression)]) : EXCR4
+  (cond [(and (s-exp-symbol? (second s)) (is-operator (s-exp->symbol (second s)) invalid)) (error 'binop "not valid")]
+        [(and (s-exp-symbol? (third s)) (is-operator (s-exp->symbol (third s)) invalid)) (error 'binop "not valid")]
+        [else (binop (s-exp->symbol (first s)) (excr3 (second s)) (excr3 (third s)))]))
+
+(test/exn (validate-binop (s-exp->list '{+ y +})) "binop: not valid")
+(test/exn (validate-binop (s-exp->list '{+ + y})) "binop: not valid")
+
+;; Function that check if list exits
+(define (pre-eval [l : (listof symbol)]) : (listof symbol)
+  (cond [(empty? l) l]
+        [(equal? (inval-repetition l (rest l)) #t) l]
+        [else (error 'parse "invalid args")]))
+
+;; Function that invalidates repetition of args
+(define (inval-repetition [l : (listof symbol)] [r : (listof symbol)]) : boolean
+  (cond [(empty? (rest l)) #t]
+        [(empty? r) (inval-repetition (rest l) (rest (rest l)))]
+        [(equal? (first l) (first r)) #f]
+        [else (inval-repetition l (rest r))]))
+
+(test (pre-eval (list)) (list))
+(test (pre-eval (list 'x)) (list 'x))
+(test/exn (pre-eval (list 'x 'x)) "parse: invalWelcome to DrRacket, version 6.1 [3m].
+Language: racket; memory limit: 128 MB.
+> id args")
+(test (pre-eval (list 'x 'z 'y)) (list 'x 'z 'y))
+
+;; Function that return the last EXCR
+(define (get-last [s : (listof s-expression)]) : EXCR4
+  (cond [(empty? (rest s)) (excr3 (first s))]
+        [else (get-last (rest s))]))
+
+;; Function to get the first value of the s-pression
+(define (get-first [s : s-expression]) : EXCR4
+  (excr3 s))
+
+;; Function to creat EXCR3 type
+(define (excr3 [n : s-expression]) : EXCR4
+  (cond [(s-exp-match? '{false} n) (tf #false)]
+        [(s-exp-match? '{true} n) (tf #true)]
+        [(s-exp-number? n) (value (s-exp->number n))]
+        [(s-exp-symbol? n) (idC (s-exp->symbol n))]
+        [(s-exp-match? '{with {SYMBOL = ANY} ... ANY} n)
+         (appC (func (pre-eval (map are-args (partition (rest (s-exp->list n)))))
+               (get-last (s-exp->list n)))
+               (map excr-args (partition (rest (s-exp->list n)))))]
+        [(s-exp-match? '{fn {SYMBOL ...} ANY} n)
+         (func (pre-eval (map  s-exp->symbol (s-exp->list (second (s-exp->list n)))))
+               (excr3 (third (s-exp->list n))))]
+        [(and (s-exp-match? '{SYMBOL ANY ANY} n) (is-operator (s-exp->symbol (first (s-exp->list n))) ll))
+         (validate-binop (s-exp->list n))]
+        [(s-exp-match? '{if ANY ANY ANY} n)
+         (if_ (s-exp->symbol (first (s-exp->list n)))
+                 (excr3 (second (s-exp->list n)))
+                 (excr3 (third (s-exp->list n)))
+                 (excr3 (fourth (s-exp->list n))))]
+        [(s-exp-match? '{new-array ANY ANY} n)
+         (new-array (excr3 (second (s-exp->list n)))
+                    (excr3 (third (s-exp->list n))))]
+        [(s-exp-match? '{ref ANY[ANY]} n)
+         (ref (excr3 (second (s-exp->list n)))
+              (excr3 (first (s-exp->list (third (s-exp->list n))))))]
+        [(s-exp-match? '{SYMBOL[NUMBER] <- ANY} n)
+         (insert (excr3 (first (s-exp->list n)))
+                 (excr3 (first (s-exp->list (second (s-exp->list n)))))
+                 (excr3 (fourth (s-exp->list n))))]
+        [(s-exp-match? '{ANY <- ANY} n)
+         (replace (excr3 (first (s-exp->list n)))
+                  (excr3 (third (s-exp->list n))))]
+        [(s-exp-match? '{begin ANY ANY ...} n)
+         (begin (map get-first (partition (rest (s-exp->list n))))
+               (get-last (s-exp->list n)))]
+        #;[(s-exp-match? '{while ANY ...} n) (value 1)]
+        [else (appC (excr3 (first (s-exp->list n)))
+                    (map excr3 (rest (s-exp->list n))))]))
+
+(test (excr3 '{{fn {x y} 9} 3 2}) (appC (func (list 'x 'y) (value 9)) (list (value 3) (value 2))))
+(test (excr3 '{new-array 39 0.0}) (new-array (value 39) (value 0.0))) 
+(test (excr3 '{ref p[3]}) (ref (idC 'p) (value 3)))
+(test (excr3 '{p[10] <- 50}) (insert (idC 'p) (value 10) (value 50)))
+(test (excr3 '{x <- 10}) (replace (idC 'x) (value 10)))
+(test (excr3 '{begin 4 5 6 9 100}) (begin (list (value 4) (value 5) (value 6) (value 9)) (value 100)))
+(test (excr-args '{z = 2}) (value 2))
+(test (excr-args '{z = 2}) (value 2))
+(test (get-first '4) (value 4))
+
+;; parse an s-exp into an EXCR3
+(define (parse [n : s-expression]) : EXCR4
+  (cond [(s-exp-match? '{ANY} n) (excr3 n)]
+        [(s-exp-match? '{with {SYMBOL = ANY} ... ANY} n) (excr3 n)]
+        [(s-exp-match? '{fn {SYMBOL ...} ANY} n) (excr3 n)]
+        [(s-exp-match? '{SYMBOL ANY ANY} n) (excr3 n)]
+        [(s-exp-match? '{if ANY ANY ANY} n) (excr3 n)]
+        [else (excr3 n)]))
+
+(test (parse '{{fn {x y} 9} 3 2}) (appC (func (list 'x 'y) (value 9)) (list (value 3) (value 2))))
+(test (get-last (s-exp->list '{with {+ 1 2} {+ 1 2} 9})) (value 9))
+(test (parse '{false}) (tf #false))
+(test (parse '{true}) (tf #true))
+(test (parse '{with (x = 98) (z = (+ 1 2)) (+ x z)})
+      (appC (func (list 'x 'z) (binop '+ (idC 'x) (idC 'z))) (list (value 98) (binop '+ (value 1) (value 2)))))
+
+(test (parse '{fn (x y) (+ x y)}) (func (list 'x 'y)(binop '+ (idC 'x) (idC 'y))))
+(test (parse '{if 1 2 (+ 1 2)}) (if_ 'if (value 1) (value 2) (binop '+ (value 1) (value 2))))
+(test (parse '{+ 1 (+ 1 2)}) (binop '+ (value 1) (binop '+ (value 1) (value 2))))
+
+;; an environment is represented as a list of bindings
+(define-type-alias Env (listof Binding))
+(define-type-alias Location number)
+
+;; a value is represented as a value
+(define-type Value
+  [numV (n : number)]
+  [boolV (b : boolean)]
+  [cloV (param : (listof symbol))
+        (body : EXCR4)
+        (env : Env)]
+  [arrV (ptr : Location) (len : number)])
+
+;; a binding represents a binding
+(define-type Binding
+  [bind (name : symbol) (l : Location)])
+
+;; a store is a map from numbers to Values
+(define-type-alias Store (hashof Location Value))
+(define empty-store (hash (list (values 0 (boolV #true)) (values 1 (boolV #false)))))
+(define empty-env (list (bind 'true 0) (bind 'false 1)))
+
+;; represent a pair type Value and Store
+(define-type Result
+  [v*s (v : Value) (s : Store)])
+
+;; Represent a pair type Values Store and Env
+(define-type Storage
+  [v*s*e (v : (listof Value)) (s : Store) (e : Env)])
+
+
+;; look up a binding in an env
+(define (env-lookup [name : symbol] [env : Env]) : Location
+  (cond [(empty? env) (error 'env-lookup (string-append "no binding for: " (to-string name)))]
+        [else (cond [(eq? name (bind-name (first env))) (bind-l (first env))]
+                    [else (env-lookup name (rest env))])]))
+
+(test/exn (env-lookup 'exists empty-env) "env-lookup: no binding for: 'exists")
+
+;; Function to return string of type Value
+(define (top-eval [s : s-expression]) : string
+  (serialize (v*s-v (eval (parse s) empty-env empty-store))))
+
+;; Function to conver type Value to numbers to string
+(define (serialize [t : Value]) : string
+  (cond [(numV? t) (to-string (numV-n t))]
+        [(arrV? t) "#<array>"]
+        [(boolV? t)
+         (cond [(equal? (boolV-b t) #t) "true"]
+               [else "false"])]
+        [else "#<procedure>"]))
+
+(test (serialize (arrV 10 10)) "#<array>")
+(test (serialize (boolV #f)) "false")
+(test (serialize (boolV #t)) "true")
+(test (serialize (cloV (list) (value 1) empty)) "#<procedure>")
+
+;; Function to eval bools or nums
+(define (eq?<= [ops : symbol] [v1 : Value] [v2 : Value] [env : Env]) : boolean
+  (cond [(and (numV? v1) (numV? v2) (symbol=? ops '<=)) (<= (numV-n v1) (numV-n v2))]
+        [(and (numV? v1) (numV? v2) (symbol=? ops 'eq?)) (eq? (numV-n v1) (numV-n v2))]
+        [(and (boolV? v1)(boolV? v2)(symbol=? ops 'eq?)) (eq? (boolV-b v1) (boolV-b v2))]
+        [else #f]))
+
+(test (eq?<= 'eq? (boolV #true) (boolV #true) empty) #true)
+(test (eq?<= 'eq? (boolV #true) (numV 1) empty) #false)
+(test (eq?<= '<= (numV 1) (numV 1) empty) #true)
+(test (eq?<= 'eq? (numV 1) (numV 1) empty) #true)
+(test (eq?<= '< (numV 1) (numV 1) empty) #false)
+
+;; fetch an element from the store
+(define (fetch-from-sto [pointer : Location] [store : Store]) : Value
+  (type-case (optionof Value)(hash-ref store pointer)
+    [some (n) n]
+    [else (error 'fetch-from-sto (string-append "unallocated memory location: "
+                                                (to-string pointer)))]))
+
+(test (fetch-from-sto 2 (hash (list (values 2 (numV 11)) (values 3 (numV 22)) (values 10 (numV 33)))))
+      (numV 11))
+(test/exn (fetch-from-sto 2 empty-store) "fetch-from-sto: unallocated memory location: 2")
+
+;; Functiont that return max key value from hash
+(define (max-key [l : (listof number)])
+  (cond [(empty? (rest l)) (first l)]
+        [else (max-key (rest l))]))
+
+(test (max-key (hash-keys (hash (list (values 0 'a) (values 100 'd) (values 1 'a) (values 3 'a) (values 4 'a))))) 100)
+
+;; Functiont to get new loction for hash
+(define (new-loc [loc : Store])
+  (+ 1 (max-key (hash-keys loc))))
+
+;; mutate an element in the store
+(define (update-sto [pointer : number] [new-val : Value] [store : Store]) : Store
+  (hash-set store pointer new-val))
+
+(test (update-sto 3  (numV 23) (hash (list (values 2 (numV 1234)) (values 3 (numV 9999)) (values 10 (numV 19287)))))
+      (hash (list (values 2 (numV 1234)) (values 3 (numV 23)) (values 10 (numV 19287)))))
+
+;; add a binding to an env
+(define (add-binding [from : (listof symbol)] [to : (listof Value)] [ontopof : Env] [sto : Store]) : Storage
+  (cond [(empty? from) (v*s*e empty sto ontopof)]
+        [else (local ([define cell (new-loc sto)])
+                (add-binding (rest from) (rest to) (cons (bind (first from) cell) ontopof) (update-sto cell (first to) sto)))]))
+
+#;(test (add-binding (list 'x 'y 'z 'w) (+ 1 (max-key (hash-keys empty-store))) empty-env) (list (bind 'x 2)(bind 'y 3)
+                                                                          (bind 'z 4)(bind 'w 5)
+                                                                          (bind 'true 0) (bind 'false 1)))
+
+;; Function that extract the values of the arguments
+(define (ex-args-r [args : (listof EXCR4)] [env : Env] [sto : Store]) : (listof Result)
+  (cond [(empty? args) empty]
+        [else 
+         (local ([define l (eval (first args) env sto)])
+           (cond [(cloV? (v*s-v l)) (cons l (ex-args-r (rest args) (cloV-env (v*s-v l)) (v*s-s l)))]
+           [else (cons l (ex-args-r (rest args) env (v*s-s l)))]))]))
+
+;; Function that extract the values from pair results
+(define (ex-args-v [arg : Result]) : Value
+  (v*s-v arg))
+
+;; Function that will creat a new array
+(define (create-arr [base : number][size : number] [val : Value] [sto : Store]) : Store
+  (cond [(< size 0) sto]
+        [else (update-sto base val (create-arr (+ base 1)(- size 1) val sto))]))
+
+;; Functiont to update Storage
+(define (up-sto [base : (listof symbol)] [vals : (listof EXCR4)] [env : Env] [sto : Store]) : Store
+  (cond [(empty? vals) sto]
+        [else 
+         (local ([define l (eval (first vals) env sto)])
+           (cond [(cloV? (v*s-v l)) 
+                  (up-sto (rest base) (rest vals) (cloV-env (v*s-v l)) 
+                                            (update-sto (env-lookup (first base) (cloV-env (v*s-v l))) (v*s-v l) (v*s-s l)))]
+                 [else (up-sto (rest base) (rest vals) env (update-sto (env-lookup (first base) env) (v*s-v l) (v*s-s l)))]))]))
+
+;; Functiont to update Storage
+(define (up-env [base : (listof symbol)] [vals : (listof EXCR4)] [env : Env] [sto : Store]) : Env
+  (cond [(empty? vals) env]
+        [else 
+         (local ([define l (eval (first vals) env sto)])
+           (cond [(cloV? (v*s-v l)) 
+                  (up-env (rest base) (rest vals) (cloV-env (v*s-v l)) 
+                                            (update-sto (env-lookup (first base) (cloV-env (v*s-v l))) (v*s-v l) (v*s-s l)))]
+                 [else (up-env (rest base) (rest vals) env (update-sto (env-lookup (first base) env) (v*s-v l) (v*s-s l)))]))]))
+
+;; Functiont that will evaluate a sequence of excr
+(define (eval-seq [e : (listof EXCR4)] [val : EXCR4] [env : Env] [sto : Store]) : Result
+  (cond [(empty? e) (eval val env sto)]
+        [else 
+         (local ([define l (eval (first e)env sto)])
+           (eval-seq (rest e) val env (v*s-s l)))]))
+
+;; Function that evaluates appC
+(define (eval-appc [args : (listof EXCR4)] [env : Env] [sto : Store] [vals : (listof Value)]) : Storage
+  (cond [(empty? args) (v*s*e  vals sto env)]
+        [else 
+         (local ([define new-r (eval (first args) env sto)])
+           (eval-appc (rest args) env (v*s-s new-r) (cons (v*s-v new-r) vals)))]))
+
+;; Function to evaluate expressions
+(define (eval [e : EXCR4] [env : Env] [sto : Store]) : Result
+  (type-case EXCR4 e
+    [idC (x) (v*s (fetch-from-sto (env-lookup x env) sto) sto)]
+    [tf (b) (v*s (boolV b) sto)]
+    [value (n) (v*s (numV n) sto)]
+    [binop (a b c) (type-case Result (eval b env sto)
+                     [v*s (v-b s-b)
+                          (type-case Result (eval c env s-b)
+                            [v*s (v-c s-c)
+                                 (cond [(or (symbol=? a '<=) (symbol=? a 'eq?))
+                                        (v*s (boolV (eq?<= a v-b v-c env)) s-c)]
+                                       [else (v*s (numV ((get-operator a l1 l2) (numV-n v-b) (numV-n v-c))) s-c)])])])]
+    [if_ (x w y z)
+         (local ([define statement (eval w env sto)])
+           (cond [(equal? (boolV-b (v*s-v statement)) #t) (eval y env (v*s-s statement))]
+                 [else (eval z env (v*s-s statement))]))]
+    [func (s b) (v*s (cloV s b env) sto)]
+    [appC (fun args)
+          (local ([define fun-app (eval fun env sto)])
+            (cond [(= (length args) (length (cloV-param (v*s-v fun-app))))
+                   (local ([define r-vals (eval-appc args (cloV-env (v*s-v fun-app)) (v*s-s fun-app) empty)]
+                           [define new-binding 
+                             (add-binding (cloV-param (v*s-v fun-app)) (reverse (v*s*e-v r-vals)) (cloV-env (v*s-v fun-app)) (v*s*e-s r-vals))])
+                   (eval (cloV-body (v*s-v fun-app)) (v*s*e-e new-binding) (v*s*e-s new-binding)))]
+                  [else #;(error 'appC (string-append (to-string env) (to-string sto #;(cloV-body (v*s-v fun-app)))))
+                   (error 'appC (string-append "not equal length" (to-string '!)))]))]
+    [new-array (size val)
+               (local ([define base (+ 1 (max-key (hash-keys sto)))])
+     (v*s (arrV base (value-num size)) (create-arr base (value-num size) (numV (value-num val)) sto)))]
+    [ref (name idx)
+         (local ([define arr (eval name env sto)])
+           (cond [(or (> (arrV-len (v*s-v arr)) (value-num idx)) (= (arrV-len (v*s-v arr)) (value-num idx)))
+                  (v*s (fetch-from-sto (+ (arrV-ptr (v*s-v arr)) (value-num idx)) (v*s-s arr)) (v*s-s arr))]
+                 [else (error 'ref "idx too large")]))]
+    [insert (name idx val) 
+            (local ([define arr (eval name env sto)])
+           (cond [(or (> (arrV-len (v*s-v arr)) (value-num idx)) (= (arrV-len (v*s-v arr)) (value-num idx)))
+                  (v*s (v*s-v arr) (update-sto (value-num idx) (numV (value-num val)) (v*s-s arr)))]
+                 [else (error 'insert "idx too large")]))]
+    [replace (where val) (v*s (numV 1) sto)#;(eval where (add-binding (list (idC-s where)) (value-num val) env) sto)]
+    [Seq (start val) 
+         (local ([define seq (ex-args-r start env sto)]
+                 [define vals (map ex-args-v seq)])
+                   (eval-seq start val env sto))]))
+
+(define arr (create-arr 2 10 (numV 3) empty-store))
+(define tmp (update-sto 2 (arrV 3 10) empty-store))
+(define arr2 (create-arr 3 10 (numV 0.0) tmp))
+(define tmp-env (cons (bind 'arr 2) empty-env))
+
+#;(while evaluating (top-eval (quote ((fn (seven) (seven)) ((fn (minus) (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y))))))):
+  appC: not equal length '!
+Saving submission with errors.)
+
+(test (top-eval (quote ((fn (empty) ((fn (cons) ((fn (empty?) ((fn (first) ((fn (rest) ((fn (Y) ((fn (length) ((fn (addup) (addup 
+ (cons 3 (cons 17 empty)))) (Y (fn (addup) (fn (l) (if (empty? l) 0 (+ (first l) (addup (rest l))))))))) (Y (fn (length) (fn (l) 
+ (if (empty? l) 0 (+ 1 (length (rest l))))))))) ((fn (x) (fn (y) (y (fn (z) (((x x) y) z))))) (fn (x) (fn (y) (y (fn (z) (((x x) y) z)))))))) 
+ (fn (l) (l false)))) (fn (l) (l true)))) (fn (l) (eq? l empty)))) (fn (a b) (fn (select) (if select a b))))) 13))) "20")
+
+(test (top-eval (quote ((fn (seven) (seven)) ((fn (minus) 
+      (fn () (minus (+ 3 10) (* 2 3)))) (fn (x y) (+ x (* -1 y))))))) "7")
+
+#;(
+(test (eval(Seq (list (value 1) (value 2) (value 5)) (binop '* (value 1) (value 5))) empty-env empty-store)
+      (v*s (numV 5) empty-store))
+(test/exn (eval (insert (idC 'arr) (value 23) (value 1000)) tmp-env arr2) "insert: idx too large")
+(test (eval (binop '<= (value 1) (value 1)) empty-env empty-store)  (v*s (boolV #true) empty-store))
+#;(test (eval-seq (list (value 1) (appC (func (list) (value 1)) (list))) (appC (func (list) (value 1)) (list)) empty-env empty-store)
+      (v*s (numV 1) empty-store))
+(test (eval-seq (list (value 1) (value 2)) (value 5) empty-env empty-store) (v*s (numV 5) empty-store))
+(test (top-eval '{+ 3 2}) "5")
+(test/exn (eval (ref (idC 'arr) (value 23)) tmp-env arr2) "ref: idx too large")
+(test (eval (ref (idC 'arr) (value 3)) tmp-env arr2) (v*s (numV 0.0) arr2))
+#;(test (eval (replace (idC 'false) (value 2)) tmp-env arr2) (v*s (arrV 3 10) arr2))
+(test (create-arr 2 10 (numV 3) empty-store) arr)
+(test (eval (new-array (value 10) (value 0.0)) tmp-env tmp) (v*s (arrV 3 10) arr2))
+(test (eval (ref (idC 'arr) (value 10)) (cons (bind 'arr 2) empty-env) arr2) (v*s (numV 0.0) arr2))
+(test (eval (insert (idC 'arr) (value 5) (value 1000)) tmp-env arr2) (v*s (arrV 3 10) (update-sto 5 (numV 1000) arr2)))
+
+(test/exn (eval (appC  (func (list 'z 'w)
+      (binop '* (binop '+ (value 5) (value 5)) (binop '+ (value 5) (value 5)))) (list (value 5) (value 5) (value 5) (value 5))) empty-env empty-store)  "appC: not equal length'!")
+#;(test (eval (appC  (func (list 'x 'y 'z 'w)
+      (binop '* (binop '+ (idC 'x) (idC 'y)) (binop '+ (idC 'z) (idC 'w)))) (list (value 5) (value 5) (value 5) (value 5)))
+            empty-env empty-store) (v*s (numV 100) (hash (list (values 0 (boolV #true)) (values 1 (boolV #false))
+                                                               (values 2 (numV 5)) (values 3 (numV 5)) (values 4 (numV 5)) (values 5 (numV 5))))))
+
+(test (eval (idC 'true) empty-env empty-store) (v*s (boolV #true) empty-store))
+(test (eval (tf #true) empty-env empty-store) (v*s (boolV #true) empty-store))
+(test (eval (value 10) empty-env empty-store) (v*s (numV 10) empty-store))
+(test (eval (binop '* (idC 'x) (idC 'y)) (list (bind 'x 0) (bind 'y 1))
+            (hash (list (values 0 (numV 10)) (values 1 (numV 10)))))
+      (v*s (numV 100) (hash (list (values 0 (numV 10)) (values 1 (numV 10))))))
+(test (eval (if_ 'if (tf #true) (binop '* (idC 'x) (idC 'y)) (binop '* (value 5) (value 10))) (list (bind 'x 0) (bind 'y 1))
+            (hash (list (values 0 (numV 10)) (values 1 (numV 10)))))
+      (v*s (numV 100) (hash (list (values 0 (numV 10)) (values 1 (numV 10))))))
+(test (eval (if_ 'if (tf #false) (binop '* (idC 'x) (idC 'y)) (binop '* (value 5) (value 10))) (list (bind 'x 0) (bind 'y 1))
+            (hash (list (values 0 (numV 10)) (values 1 (numV 10)))))
+      (v*s (numV 50) (hash (list (values 0 (numV 10)) (values 1 (numV 10))))))
+#;(test (eval (func (list 'x 'y) (binop '+ (idC 'x) (idC 'y))) empty empty-store)
+      (v*s (cloV (list 'x 'y) (binop '+ (idC 'x) (idC 'y)) empty) empty-store))
+(test (eval (value 5) empty empty-store) (v*s (numV 5) empty-store))
+(test (eval (binop '+ (value 5) (value 2)) empty empty-store) (v*s (numV 7) empty-store))
+(test (eval (if_ 'if (tf #t) (binop '+ (value 5) (value 5)) (value 5)) empty empty-store) (v*s (numV 10) empty-store))
+(test (eval (if_ 'if (tf #f) (value 10) (value 5)) empty empty-store) (v*s (numV 5) empty-store))
+)

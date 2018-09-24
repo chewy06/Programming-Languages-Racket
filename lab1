@@ -1,0 +1,93 @@
+#lang plai-typed
+
+;; Coverting dollar to euros
+(define (dollar->euro d) (* 1.17 d))
+
+;; Test for dolar->euro function
+(test (dollar->euro 1) 1.17)
+(test (dollar->euro 2) 2.34)
+
+;; Calculate the area of a triangle
+(define (triangle base height) (/ (* base height) 2))
+
+;; Test for triangle function
+(test (triangle 10 5) 25)
+(test (triangle 2 5) 5)
+
+;; Calculate the interest rate
+(define (interest d) 
+  (cond
+    [(<= d 1000) (* d 4/100)]
+    [(<= d 5000) (* d 45/1000)]
+    [(>  d 5000) (* d 5/100)]))
+
+;; Test interest function
+(test (interest 500) 20)
+(test (interest 2000) 90)
+(test (interest 10000) 500)
+
+;; Find calculate discriminant
+(define (discriminant a b c)
+  (- (* b b) (* (* a c) 4)))
+
+;; Test discriminant function
+(test (discriminant 1 2 1)  0)
+(test (discriminant 2 4 1)  8)
+(test (discriminant 2 4 3) -8)
+
+;; Find the number of solution for a especific quadratic
+(define (how-many a b c) 
+  (cond
+    [(> (discriminant a b c) 0) 2]
+    [(= (discriminant a b c) 0) 1]
+    [(< (discriminant a b c) 0) 0]))
+
+;; Test how-many function
+(test (how-many  1 2 1)  1)
+(test (how-many  2 4 1)  2)
+(test (how-many  2 4 3)  0)
+(test (how-many 1 0 -1)  2)
+(test (how-many  2 4 2)  1)
+
+;; Function that return symbols represented as real values for quadratic
+(define (what-kind a b c) 
+  (cond
+    [(= a 0) 'degenerate]
+    [(= (how-many a b c) 2) 'two]
+    [(= (how-many a b c) 1) 'one]
+    [(= (how-many a b c) 0) 'none]))
+
+;; Test what-kind function
+(test (what-kind 1 2  1) 'one)
+(test (what-kind 2 4  1) 'two)
+(test (what-kind 2 4  3) 'none)
+(test (what-kind 1 0 -1) 'two)
+(test (what-kind 2 4  2) 'one)
+(test (what-kind 0 1  1) 'degenerate)
+
+;; Represents office
+(define-type office
+  ;; desk with varibales width height depth
+  [desk (width : number) (height : number) (depth : number)]
+  ;; shelves with variables d
+  [shelves (width : number) (n-shelves : number) (depth : number)])
+
+(define dks1 (desk 10 1 1))
+(define dks2 (desk 10 5 5))
+
+;; furniture function
+(define (furniture-footprint (footprint : office))
+  (type-case office footprint
+    ;; case desk multiply width * depth
+    [desk (w h d) (* w d)]
+    ;; case shelves mutipy width * depth
+    [shelves (w n d) (* w d)]))
+
+(test (furniture-footprint dks1) 10)
+(test (furniture-footprint dks2) 50)
+
+(define shelf1 (shelves 1 2 3))
+(define shelf2 (shelves 10 10 10))
+
+(test (furniture-footprint shelf1) 3)
+(test (furniture-footprint shelf2) 100)

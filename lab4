@@ -1,0 +1,45 @@
+#lang plai-typed
+
+;;((lambda (x) (+ x 2)) 3)
+;;((lambda (f g) (f (g 3)))
+;;(lambda (x) (+ x 3))
+;;(lambda (x) (* x 2)))
+
+;; Function that takes a argument and returns another function
+(define curried-add (lambda (a) (lambda (b) (+ b a))))
+
+(test ((curried-add 3) 2) 5)
+(test ((curried-add 3) 3) 6)
+(test ((curried-add 5) 5) 10)
+
+;; function that takes function that produces another function that evalutes the input function
+(define (curry2 [f2 : ('a 'a -> 'a)]) : ('a -> ('a -> 'a))
+  (lambda (x) (lambda (y) (f2 x y))))
+
+(test (((curry2 (lambda (x y) (+ x y)))2)2) 4)
+(test (((curry2 (lambda (x y) (* x y)))2)2) 4)
+(test (((curry2 (lambda (x y) (* x y)))2)5) 10)
+(test (((curry2 (lambda (x y) (/ x y)))10)2) 5)
+
+;; Function that takes a function with 3 args and produces a function that takes one 
+;; args and produces another functoin that eval input function
+(define (curry3 [f2 : ('a 'a 'a -> 'a)]) : ('a -> ('a -> ('a -> 'a)))
+  (lambda (x) (lambda (y) (lambda (z) (f2 x y z)))))
+
+(test ((((curry3 (lambda (x y z) (+ x (+ z y))))2)2)3) 7)
+(test ((((curry3 (lambda (x y z) (+ x (+ z y))))1)2)3) 6)
+(test ((((curry3 (lambda (x y z) (+ x (+ z y))))4)5)6) 15)
+
+;; Function that return true if symbol was found within a input list
+(define (contains [l : (listof 'a)] [s : symbol]) : boolean
+  (cond
+    [(empty? l) #f]
+    [(symbol=? (first l) s) #t]
+    [else (contains (rest l) s)]))
+
+(test (contains (list 'a 'b 'c 'd 'e) 'e) #t)
+(test (contains (list 'a 'b 'c 'd 'e) 'f) #f)
+
+;; Function that returns a list of boolean stating wether a symbols was found in a list
+#;(define (in-list-many [l : (listof 'a)] [query : (listof 'a)]) : (listof boolean)
+  ((map curry2 (map contains ) )))

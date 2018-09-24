@@ -1,0 +1,173 @@
+#lang plai-typed
+
+(require plai-typed/s-exp-match)
+
+;; Functions that converts list into a reversed string
+(define (rev-str-app [strlist : (listof 'a)]) : 'a
+  (cond
+    ;; statement that checks for empty list
+    [(empty? strlist) ""]
+    ;; Recursive call that reverses list and converts them into strings
+    [else (string-append (rev-str-app (rest strlist)) (first strlist))]))
+
+(test (rev-str-app empty) "")
+(test (rev-str-app (cons "ball" (cons "next" empty))) "nextball")
+(test (rev-str-app (cons "catch" (cons "ball" (cons "next" empty)))) "nextballcatch")
+(test (rev-str-app 
+                  (cons "wins" (cons "catch " (cons "ball " (cons "next " empty)))))
+                   "next ball catch wins")
+;; Represents different types of processors
+(define-type processors
+  [Intel (intel : number)]
+  [AMD (amd : number)]
+  [ARM (arm : number)])
+
+;; Function that creates a list of only Intels processors
+(define (onlyIntels [intel-p : (listof processors)]) : 'a
+  (cond
+    ;; If empty return empty
+    [(empty? intel-p) empty]
+    ;; search for Intel processors
+    [else (type-case processors (first intel-p)
+            ;; store current Intel and keeps searching
+            [Intel (intel) (cons (first intel-p) (onlyIntels (rest intel-p)))]
+            ;; keep searching if not intel
+            [AMD (amd) (onlyIntels (rest intel-p))]
+            ;; keep searching if not intel
+            [ARM (arm) (onlyIntels (rest intel-p))])]))
+
+(define intel1 (Intel 1))
+(define intel2 (Intel 2))
+(define amd1 (AMD 3))
+(define amd2 (AMD 5))
+(define arm1 (ARM 6))
+
+(define p-list (list intel2 amd1 arm1 intel1))
+(define p-list2 (list amd1 arm1 intel1 intel2 amd2))
+(define p-list3 (list intel2 amd1 amd2 arm1 intel1 arm1 arm1 amd1 amd1 intel1 intel2))
+
+(test (onlyIntels empty) empty)
+(test (onlyIntels p-list) (list (Intel 2) (Intel 1)))
+(test (onlyIntels p-list2) (list (Intel 1) (Intel 2)))
+(test (onlyIntels p-list3) (list (Intel 2) (Intel 1) (Intel 1) (Intel 2)))
+
+;; Function that creates a list of only AMDs processors
+(define (onlyAMDs [amds : (listof processors)]) : 'a
+  (cond
+    ;; If list is empty then return empty string
+    [(empty? amds) empty]
+    ;; Search through the list looking for AMDs processors
+    [else (type-case processors (first amds)
+            ;; skips if Intel
+            [Intel (intel) (onlyAMDs (rest amds))]
+            ;; if AMD adds it to the list
+            [AMD (amd) (cons (first amds) (onlyAMDs (rest amds)))]
+            ;; skips if ARM
+            [ARM (arm) (onlyAMDs (rest amds))])]))
+
+(test (onlyAMDs empty) empty)
+(test (onlyAMDs p-list) (list (AMD 3)))
+(test (onlyAMDs p-list2) (list (AMD 3) (AMD 5)))
+(test (onlyAMDs p-list3) (list (AMD 3) (AMD 5) (AMD 3) (AMD 3)))
+
+;; Function that outputs expecific processors Intels or AMDs
+(define (onlyThese [p-list : (listof processors)] 
+                   [bol : (processors -> boolean)]) : 'a
+  (cond
+    [(empty? p-list) empty]
+    [(bol (first p-list)) (cons (first p-list) (onlyThese (rest p-list) bol))]
+    [else (onlyThese (rest p-list) bol)]))
+
+(test (onlyThese empty AMD?) empty)
+(test (onlyThese p-list3 AMD?) (list (AMD 3) (AMD 5) (AMD 3) (AMD 3)))
+(test (onlyThese p-list3 Intel?) (list (Intel 2) (Intel 1) (Intel 1) (Intel 2)))
+
+;; Function that concats two list
+(define (my-append [l1 : (listof 'a)] [l2 : (listof 'a)]) : (listof 'a)
+  (cond 
+    ;; if both are empty return empty
+    [(and (empty? l1) (empty? l2)) empty]
+    ;; if list l1 is empty then add elements of l2
+    [(empty? l1) (cons (first l2) (my-append l1 (rest l2)))]
+    ;; if list l2 is empty then add elements of l1
+    [else (cons (first l1) (my-append (rest l1) l2))]))
+
+(test (my-append empty empty) empty)
+(test (my-append p-list p-list) 
+      (list (Intel 2) (AMD 3) (ARM 6) (Intel 1) (Intel 2) (AMD 3) (ARM 6) (Intel 1)))
+
+;; function to creat a list of given size n
+(define (my-drop [l1 : (listof 'a)] [n : number]) : 'a
+  (cond 
+    [(= n 0) empty]
+    [(empty? l1) empty]
+    [else (cons (first l1) (my-drop (rest l1) (- n 1)))]))
+
+(test (my-drop p-list 1) (list (Intel 2)))
+(test (my-drop p-list 3) (list (Intel 2) (AMD 3) (ARM 6)))
+
+;; Represents arithmetic operation
+(define-type ArithC
+  [numC (n : number)]
+  [plusC (l : ArithC) (r : ArithC)]
+  [multC (l : ArithC) (r : ArithC)])
+
+;; function to evaluate the operations
+(define (eval [e : ArithC]) : number
+  (type-case ArithC e
+      [numC (n) n]
+      [plusC (l r) (+ (eval l) (eval r))]
+      [multC (l r) (* (eval l) (eval r))]))
+
+(test (eval (numC 3)) 3)
+(test (eval (plusC (numC 3) (numC 4))) 7)
+(test (eval (multC (numC 3) (numC 4))) 12)
+
+;; function that return the numbers nested withing ArithC
+(define (num-nums [a : ArithC]) : number
+  (type-case ArithC a
+    [numC (n) 1]
+    [plusC (l r) (+ (num-nums l) (num-nums r))]
+    [multC (l r) (+ (num-nums l) (num-nums r))]))
+
+(test (num-nums (numC 3)) 1)
+(test (num-nums (plusC (numC 3) (numC 4))) 2)
+(test (num-nums (multC (numC 3) (multC (numC 3) (numC 4)))) 3)
+(test (num-nums (multC (plusC (numC 3) (numC 4)) (plusC (numC 3) (numC 4)))) 4)
+
+;; parse an s-exp into an ArithC
+(define (parse [n : s-expression]) : ArithC
+  (cond [(s-exp-number? n) (numC (s-exp->number n))]
+        [(s-exp-match? `{+ ANY ANY} n)
+         (plusC (parse (second (s-exp->list n)))
+                  (parse (third (s-exp->list n))))]
+        [(s-exp-match? `{* ANY ANY} n)
+         (multC (parse (second (s-exp->list n)))
+                  (parse (third (s-exp->list n))))]
+        [else (error 'parse
+                     (string-append "not an s-exp: "
+                                    (to-string n)))]))
+
+(test (parse '{* 3 3}) (multC (numC 3) (numC 3)))
+(test (parse '{+ 3 3}) (plusC (numC 3) (numC 3)))
+(test (parse '5) (numC 5))
+
+(test (parse '{+ {* 3 3} {+ 3 4}}) (plusC (multC (numC 3) (numC 3)) 
+                                          (plusC (numC 3) (numC 4))))
+
+(test (parse '{* {* 3 3} {+ 3 4}}) (multC (multC (numC 3) (numC 3)) 
+                                          (plusC (numC 3) (numC 4))))
+;; parse s-expresssion and evaluate it
+(define (parse-eval [s : s-expression])
+  (eval (parse s)))
+
+(test (parse-eval '{* 5 {+ 1 1}}) 10)
+(test (parse-eval '{* 5 {+ 0 0}}) 0)
+(test (parse-eval '{+ 5 {+ 1 1}}) 7)
+(test (parse-eval '{+ 5 {* 0 0}}) 5)
+(test (parse-eval '{+ 0 {* 0 0}}) 0)
+
+(test (parse-eval '{* {* 3 3} {+ 3 1}}) 36)
+(test (parse-eval '{* {* 5 5} {+ 3 1}}) 100)
+(test (parse-eval '{+ {* 3 3} {+ 3 1}}) 13)
+(test (parse-eval '{+ {* 5 5} {+ 3 1}}) 29)

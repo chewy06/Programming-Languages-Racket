@@ -1,0 +1,60 @@
+#lang plai-typed
+
+;; solution Function that takes a value 'v and a function f (in this order)
+;; and just return 'v
+(define p1 (lambda (v) (lambda (f) v)))
+;; test case:
+(test ((p1 8) (lambda (x) (* x 3))) 8)
+
+;; 1: Function that accepts a function and an argument(in this order) and applies the function to the argument
+(define one (lambda (f x) (f x)))
+
+(test (one (lambda (x) (* 2 x)) 3) 6)
+(test (one (lambda (x) (* 4 x)) 3) 12)
+
+;; 1: Function that applies that functon of applying the function to var
+(define two (lambda (f x) (f (f x))))
+
+(test (two (lambda (x) (* 2 x)) 3) 12)
+(test (two (lambda (x) (* 2 x)) 10) 40)
+
+;; 2: Function that accepts a functon and an argument and return argument
+(define zero (lambda (f x) x))
+
+(test (zero (lambda (x) (* 2 x)) 3) 3)
+(test (zero (lambda (x) (* 2 x)) 100) 100)
+
+;; 3: Function that does someting complicated
+;;==> accepts a number like function that does the function one more time. 
+;;==> example add with TWO func does the function "on more time"
+(define add1 (lambda (f1) (lambda (f x) (f (f1 f x)))))
+
+(test ((add1 two) (lambda (x) (* 2 x)) 3) 24)
+(test ((add1 two) (lambda (x) (* 2 x)) 4) 32)
+
+;; 4: Function that accepts number-like function and return a function that applies it its argument that number of times. 
+(define add (lambda (f1 f2) (lambda (f x) (f2 f (f1 f x)))))
+
+(test ((add one two) (lambda (x) (* 2 x)) 2) 16)
+(test ((add zero two) (lambda (x) (* 2 x)) 2) 8)
+(test ((add two two) (lambda (x) (* 2 x)) 2) 32)
+
+;; 5: function called tru that accepts two arguments and returns the first one.
+(define tru (lambda (x1 x2) x1))
+
+(test (tru 1 2)1)
+(test (tru 3 4)3)
+(test (tru 5 6)5)
+
+;; 6: function called fals that accepts two arguments and returns the second one.
+(define fals (lambda (x1 x2) x2))
+
+(test (fals 1 2)2)
+(test (fals 3 4)4)
+(test (fals 5 6)6)
+
+;; 7: function that acts like a conditional statement acceptin t/f functions
+(define if (lambda (f x2 x3) (f x2 x3)))
+
+(test (if fals 1 2) 2)
+(test (if tru 1 2) 1)
